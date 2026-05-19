@@ -1,0 +1,16 @@
+.vs/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.cache
+*.log
+*.sqlite
+*.db
+*.pdb
+.env
+.env.*
+secrets.json
+*.pfx
+*.pem
+*.key

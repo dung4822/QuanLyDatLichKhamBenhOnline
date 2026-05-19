@@ -1,0 +1,43 @@
+@backend_HostAddress = http://localhost:5244
+
+GET {{backend_HostAddress}}/api/health/check
+Accept: application/json
+
+###
+
+GET {{backend_HostAddress}}/api/specialties
+Accept: application/json
+
+###
+
+GET {{backend_HostAddress}}/api/specialties/1
+Accept: application/json
+
+###
+
+POST {{backend_HostAddress}}/api/specialties
+Content-Type: application/json
+
+{
+  "name": "Cardiology",
+  "description": "Heart and cardiovascular specialty",
+  "status": "Active"
+}
+
+###
+
+PUT {{backend_HostAddress}}/api/specialties/1
+Content-Type: application/json
+
+{
+  "name": "Dental",
+  "description": "Dental examination and treatment",
+  "status": "Active"
+}
+
+###
+
+DELETE {{backend_HostAddress}}/api/specialties/1
+Accept: application/json
+
+###
