@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using WebDatLichKhamBenh.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using WebDatLichKhamBenh.Infrastructure.Persistence;
 namespace WebDatLichKhamBenh.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260622132944_InitDb_Doctor_Specialty")]
+    partial class InitDb_Doctor_Specialty
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -32,10 +35,6 @@ namespace WebDatLichKhamBenh.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Address")
                         .HasColumnType("text");
-
-                    b.Property<string>("AvatarStorageKey")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
 
                     b.Property<string>("AvatarUrl")
                         .HasMaxLength(500)
@@ -58,9 +57,6 @@ namespace WebDatLichKhamBenh.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("Gender")
                         .HasColumnType("integer");
-
-                    b.Property<bool>("IsDelete")
-                        .HasColumnType("boolean");
 
                     b.Property<string>("PhoneNumber")
                         .HasMaxLength(20)

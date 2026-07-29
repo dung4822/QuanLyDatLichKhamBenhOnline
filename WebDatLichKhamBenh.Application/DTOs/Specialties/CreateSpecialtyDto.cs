@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace WebDatLichKhamBenh.Application.DTOs;
+namespace WebDatLichKhamBenh.Application.DTOs.Specialties;
 
 public class CreateSpecialtyDto
 {

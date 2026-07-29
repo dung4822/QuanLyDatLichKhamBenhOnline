@@ -1,17 +1,14 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace WebDatLichKhamBenh.Application.DTOs;
+namespace WebDatLichKhamBenh.Application.DTOs.Specialties;
 
 public class UpdateSpecialtyDto
 {
     [Required]
-    [MaxLength(100)]
+    [MaxLength(50)]
     public string Name { get; set; } = string.Empty;
-
-    [MaxLength(500)]
+    [MaxLength(100)]
     public string? Description { get; set; }
-
-    [Required]
     [MaxLength(20)]
     public string Status { get; set; } = string.Empty;
 }

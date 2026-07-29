@@ -1,4 +1,4 @@
-using WebDatLichKhamBenh.Application.DTOs;
+using WebDatLichKhamBenh.Application.DTOs.Specialties;
 using WebDatLichKhamBenh.Application.Interfaces.Repositories;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 using WebDatLichKhamBenh.Domain.Entities;
@@ -20,11 +20,13 @@ public class SpecialtyService : ISpecialtyService
         return specialties.Select(MapToDto).ToList();
     }
 
+#if false
     public async Task<SpecialtyDto?> GetByIdAsync(int specialtyId)
     {
         var specialty = await _specialtyRepository.GetByIdAsync(specialtyId);
         return specialty == null ? null : MapToDto(specialty);
     }
+#endif
 
     public async Task<SpecialtyDto> CreateAsync(CreateSpecialtyDto createSpecialtyDto)
     {
@@ -44,22 +46,25 @@ public class SpecialtyService : ISpecialtyService
 
     public async Task<SpecialtyDto?> UpdateAsync(int specialtyId, UpdateSpecialtyDto updateSpecialtyDto)
     {
-        var specialty = await _specialtyRepository.GetByIdAsync(specialtyId);
+        var specialty = await _specialtyRepository.GetByIdTrackingAsync(specialtyId);
         if (specialty == null)
         {
             return null;
         }
+        if(updateSpecialtyDto.Name == specialty.Name &&
+            updateSpecialtyDto.Description == specialty.Description &&
+            updateSpecialtyDto.Status == specialty.Status) return MapToDto(specialty);
+
 
         specialty.Name = updateSpecialtyDto.Name.Trim();
         specialty.Description = updateSpecialtyDto.Description?.Trim();
         specialty.Status = updateSpecialtyDto.Status.Trim();
         specialty.UpdatedAt = DateTime.UtcNow;
 
-        _specialtyRepository.Update(specialty);
         await _specialtyRepository.SaveChangesAsync();
-
         return MapToDto(specialty);
     }
+
 
     public async Task<bool> DeleteAsync(int specialtyId)
     {
@@ -89,5 +94,11 @@ public class SpecialtyService : ISpecialtyService
             CreatedAt = specialty.CreatedAt,
             UpdatedAt = specialty.UpdatedAt
         };
+    }
+
+    public async Task<SpecialtyDto?> GetByIdAsync(int specialtyId)
+    {
+        var specialty = await _specialtyRepository.GetByIdAsync(specialtyId);
+        return specialty == null ? null : MapToDto(specialty);
     }
 }

@@ -2,8 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using WebDatLichKhamBenh.Application.Interfaces.Repositories;
+using WebDatLichKhamBenh.Application.Interfaces.Services;
 using WebDatLichKhamBenh.Infrastructure.Persistence;
 using WebDatLichKhamBenh.Infrastructure.Repositories;
+using WebDatLichKhamBenh.Infrastructure.Storage;
 
 namespace WebDatLichKhamBenh.Infrastructure;
 
@@ -18,6 +20,14 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString));
 
         services.AddScoped<ISpecialtyRepository, SpecialtyRepository>();
+        services.AddScoped<IDoctorRepository, DoctorRepository>();
+        services.AddSingleton(new CloudinarySettings
+        {
+            CloudName = configuration[$"{CloudinarySettings.SectionName}:CloudName"] ?? string.Empty,
+            ApiKey = configuration[$"{CloudinarySettings.SectionName}:ApiKey"] ?? string.Empty,
+            ApiSecret = configuration[$"{CloudinarySettings.SectionName}:ApiSecret"] ?? string.Empty
+        });
+        services.AddSingleton<IImageStorageService, CloudinaryImageStorageService>();
 
         return services;
     }

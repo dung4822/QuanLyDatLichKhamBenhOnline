@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using WebDatLichKhamBenh.Application.DTOs;
+using WebDatLichKhamBenh.Application.DTOs.Specialties;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 
 namespace WebDatLichKhamBenh.Api.Controllers;
@@ -22,6 +22,14 @@ public class SpecialtiesController : ControllerBase
         return Ok(specialties);
     }
 
+  /*  [HttpGet("{id}")]*/
+#if false
+    public async Task<IActionResult> GetById(int id)
+    {
+        var specialty = await _specialtyService.GetByIdAsync(id);
+        return specialty == null ? NotFound() : Ok(specialty);
+    }
+#endif
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -42,6 +50,7 @@ public class SpecialtiesController : ControllerBase
     }
 
     [HttpPut("{id}")]
+
     public async Task<IActionResult> Update(int id, [FromBody] UpdateSpecialtyDto updateSpecialtyDto)
     {
         if (!ModelState.IsValid)

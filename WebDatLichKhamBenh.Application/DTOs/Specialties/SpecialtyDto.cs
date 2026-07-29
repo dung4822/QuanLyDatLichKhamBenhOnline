@@ -1,4 +1,4 @@
-namespace WebDatLichKhamBenh.Application.DTOs;
+namespace WebDatLichKhamBenh.Application.DTOs.Specialties;
 
 public class SpecialtyDto
 {
