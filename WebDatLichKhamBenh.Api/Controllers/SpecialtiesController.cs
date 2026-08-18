@@ -38,27 +38,27 @@ public class SpecialtiesController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateSpecialtyDto createSpecialtyDto)
+    public async Task<IActionResult> Create([FromBody] CreateSpecialtyRequest createSpecialtyRequest)
     {
         if (!ModelState.IsValid)
         {
             return BadRequest(ModelState);
         }
 
-        var createdSpecialty = await _specialtyService.CreateAsync(createSpecialtyDto);
+        var createdSpecialty = await _specialtyService.CreateAsync(createSpecialtyRequest);
         return CreatedAtAction(nameof(GetById), new { id = createdSpecialty.SpecialtyId }, createdSpecialty);
     }
 
     [HttpPut("{id}")]
 
-    public async Task<IActionResult> Update(int id, [FromBody] UpdateSpecialtyDto updateSpecialtyDto)
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateSpecialtyRequest updateSpecialtyRequest)
     {
         if (!ModelState.IsValid)
         {
             return BadRequest(ModelState);
         }
 
-        var updatedSpecialty = await _specialtyService.UpdateAsync(id, updateSpecialtyDto);
+        var updatedSpecialty = await _specialtyService.UpdateAsync(id, updateSpecialtyRequest);
         return updatedSpecialty == null ? NotFound() : Ok(updatedSpecialty);
     }
 

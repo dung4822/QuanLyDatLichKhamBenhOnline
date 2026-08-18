@@ -1,12 +1,18 @@
 using WebDatLichKhamBenh.Application;
 using WebDatLichKhamBenh.Infrastructure;
 using FluentValidation;
+using System.Text.Json.Serialization;
+using WebDatLichKhamBenh.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 const string AllowFrontendDevPolicy = "AllowFrontendDev";
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -26,6 +32,7 @@ builder.Services.AddCors(options =>
 });
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddHostedService<AppointmentSlotReconciliationService>();
 
 var app = builder.Build();
 

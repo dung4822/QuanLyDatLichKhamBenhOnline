@@ -28,13 +28,13 @@ public class SpecialtyService : ISpecialtyService
     }
 #endif
 
-    public async Task<SpecialtyDto> CreateAsync(CreateSpecialtyDto createSpecialtyDto)
+    public async Task<SpecialtyDto> CreateAsync(CreateSpecialtyRequest createSpecialtyRequest)
     {
         var specialty = new Specialty
         {
-            Name = createSpecialtyDto.Name.Trim(),
-            Description = createSpecialtyDto.Description?.Trim(),
-            Status = createSpecialtyDto.Status.Trim(),
+            Name = createSpecialtyRequest.Name.Trim(),
+            Description = createSpecialtyRequest.Description?.Trim(),
+            Status = createSpecialtyRequest.Status.Trim(),
             CreatedAt = DateTime.UtcNow
         };
 
@@ -44,21 +44,21 @@ public class SpecialtyService : ISpecialtyService
         return MapToDto(specialty);
     }
 
-    public async Task<SpecialtyDto?> UpdateAsync(int specialtyId, UpdateSpecialtyDto updateSpecialtyDto)
+    public async Task<SpecialtyDto?> UpdateAsync(int specialtyId, UpdateSpecialtyRequest updateSpecialtyRequest)
     {
         var specialty = await _specialtyRepository.GetByIdTrackingAsync(specialtyId);
         if (specialty == null)
         {
             return null;
         }
-        if(updateSpecialtyDto.Name == specialty.Name &&
-            updateSpecialtyDto.Description == specialty.Description &&
-            updateSpecialtyDto.Status == specialty.Status) return MapToDto(specialty);
+        if(updateSpecialtyRequest.Name == specialty.Name &&
+            updateSpecialtyRequest.Description == specialty.Description &&
+            updateSpecialtyRequest.Status == specialty.Status) return MapToDto(specialty);
 
 
-        specialty.Name = updateSpecialtyDto.Name.Trim();
-        specialty.Description = updateSpecialtyDto.Description?.Trim();
-        specialty.Status = updateSpecialtyDto.Status.Trim();
+        specialty.Name = updateSpecialtyRequest.Name.Trim();
+        specialty.Description = updateSpecialtyRequest.Description?.Trim();
+        specialty.Status = updateSpecialtyRequest.Status.Trim();
         specialty.UpdatedAt = DateTime.UtcNow;
 
         await _specialtyRepository.SaveChangesAsync();

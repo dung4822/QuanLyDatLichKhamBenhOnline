@@ -21,6 +21,11 @@ public static class DependencyInjection
 
         services.AddScoped<ISpecialtyRepository, SpecialtyRepository>();
         services.AddScoped<IDoctorRepository, DoctorRepository>();
+        services.AddScoped<IPatientRepository, PatientRepository>();
+        services.AddScoped<IShiftRepository, ShiftRepository>();
+        services.AddScoped<IDoctorShiftRepository, DoctorShiftRepository>();
+        services.AddScoped<INonWorkingDayRepository, NonWorkingDayRepository>();
+        services.AddScoped<IAppointmentSlotRepository, AppointmentSlotRepository>();
         services.AddSingleton(new CloudinarySettings
         {
             CloudName = configuration[$"{CloudinarySettings.SectionName}:CloudName"] ?? string.Empty,

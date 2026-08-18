@@ -28,5 +28,13 @@ using System.Threading.Tasks;
              public int SpecialtyId { get; set; }
              public Specialty Specialty { get; set; } = null!;
 
+             // Các ca làm việc lặp lại hằng tuần mà bác sĩ được phân công.
+             public ICollection<DoctorShift> DoctorShifts { get; set; } = new List<DoctorShift>();
+
+             // Các ngày nghỉ riêng của bác sĩ. DoctorId null ở NonWorkingDay nghĩa là cả bệnh viện nghỉ.
+             public ICollection<NonWorkingDay> NonWorkingDays { get; set; } = new List<NonWorkingDay>();
+
+             public ICollection<AppointmentSlot> AppointmentSlots { get; set; } = new List<AppointmentSlot>();
+
     }
 }

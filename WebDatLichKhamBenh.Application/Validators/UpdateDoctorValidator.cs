@@ -3,7 +3,7 @@ using WebDatLichKhamBenh.Application.DTOs.Doctors;
 
 namespace WebDatLichKhamBenh.Application.Validators;
 
-public class UpdateDoctorValidator : AbstractValidator<UpdateDoctorDto>
+public class UpdateDoctorValidator : AbstractValidator<UpdateDoctorRequest>
 {
     public UpdateDoctorValidator()
     {

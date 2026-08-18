@@ -12,12 +12,12 @@ namespace WebDatLichKhamBenh.Application.Interfaces.Services
         Task<List<DoctorDto>> GetAllAsync();
         Task<DoctorDto?> GetByIdAsync(int doctorId);
         Task<DoctorDto> CreateAsync(
-            CreateDoctorDto createDoctorDto,
+            CreateDoctorRequest createDoctorRequest,
             CancellationToken cancellationToken = default);
         Task<bool> DeleteAsync(int doctorId);
         Task<DoctorDto?> UpdateAsync(
             int doctorId,
-            UpdateDoctorDto updateDoctorDto,
+            UpdateDoctorRequest updateDoctorRequest,
             CancellationToken cancellationToken = default);
     }
 }

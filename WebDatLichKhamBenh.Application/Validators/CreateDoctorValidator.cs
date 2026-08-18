@@ -3,7 +3,7 @@ using WebDatLichKhamBenh.Application.DTOs.Doctors;
 
 namespace WebDatLichKhamBenh.Application.Validators;
 
-public class CreateDoctorValidator : AbstractValidator<CreateDoctorDto>
+public class CreateDoctorValidator : AbstractValidator<CreateDoctorRequest>
 {
     public CreateDoctorValidator()
     {

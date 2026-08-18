@@ -3,7 +3,7 @@ using WebDatLichKhamBenh.Application.DTOs.Images;
 
 namespace WebDatLichKhamBenh.Application.Validators;
 
-public class ImageUploadValidator : AbstractValidator<ImageUploadDto>
+public class ImageUploadValidator : AbstractValidator<ImageUploadRequest>
 {
     public const long MaximumFileSize = 5 * 1024 * 1024;
 
@@ -41,7 +41,7 @@ public class ImageUploadValidator : AbstractValidator<ImageUploadDto>
     }
 
     private static async Task<bool> HaveValidFileSignatureAsync(
-        ImageUploadDto image,
+        ImageUploadRequest image,
         CancellationToken cancellationToken)
     {
         if (!image.Content.CanSeek)

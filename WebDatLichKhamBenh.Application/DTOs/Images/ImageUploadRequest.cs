@@ -1,6 +1,6 @@
 namespace WebDatLichKhamBenh.Application.DTOs.Images;
 
-public sealed record ImageUploadDto(
+public sealed record ImageUploadRequest(
     Stream Content,
     string FileName,
     string ContentType,

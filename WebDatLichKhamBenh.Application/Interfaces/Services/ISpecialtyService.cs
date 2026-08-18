@@ -9,9 +9,9 @@ public interface ISpecialtyService
     Task<SpecialtyDto?> GetByIdAsync(int specialtyId);
 #endif
     Task<SpecialtyDto?> GetByIdAsync(int specialtyId);
-    Task<SpecialtyDto> CreateAsync(CreateSpecialtyDto createSpecialtyDto);
+    Task<SpecialtyDto> CreateAsync(CreateSpecialtyRequest createSpecialtyRequest);
 
-    Task<SpecialtyDto?> UpdateAsync(int specialtyId, UpdateSpecialtyDto updateSpecialtyDto);
+    Task<SpecialtyDto?> UpdateAsync(int specialtyId, UpdateSpecialtyRequest updateSpecialtyRequest);
 
     Task<bool> DeleteAsync(int specialtyId);
 

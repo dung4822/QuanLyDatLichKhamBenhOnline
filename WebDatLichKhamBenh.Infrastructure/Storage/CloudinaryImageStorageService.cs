@@ -18,7 +18,7 @@ public class CloudinaryImageStorageService : IImageStorageService
     }
 
     public async Task<StorageImageUploadResult> UploadAsync(
-        ImageUploadDto image,
+        ImageUploadRequest image,
         CancellationToken cancellationToken = default)
     {
         try
@@ -46,6 +46,7 @@ public class CloudinaryImageStorageService : IImageStorageService
             }
 
             var secureUrl = result.SecureUrl?.AbsoluteUri;
+
             if (string.IsNullOrWhiteSpace(secureUrl)
                 || string.IsNullOrWhiteSpace(result.PublicId))
             {

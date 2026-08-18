@@ -2,7 +2,7 @@ using WebDatLichKhamBenh.Application.DTOs.Images;
 
 namespace WebDatLichKhamBenh.Application.DTOs.Doctors;
 
-public record CreateDoctorDto
+public record CreateDoctorRequest
 {
     public string FullName { get; init; } = default!;
     public string? PhoneNumber { get; init; }
@@ -11,5 +11,5 @@ public record CreateDoctorDto
     public string? Address { get; init; }
     public DateOnly CareerStartDate { get; init; }
     public int SpecialtyId { get; init; }
-    public ImageUploadDto? Avatar { get; init; }
+    public ImageUploadRequest? Avatar { get; init; }
 }

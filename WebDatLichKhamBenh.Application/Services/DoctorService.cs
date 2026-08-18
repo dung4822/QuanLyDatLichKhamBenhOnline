@@ -15,21 +15,24 @@ public class DoctorService : IDoctorService
     private readonly IDoctorRepository _doctorRepository;
     private readonly ISpecialtyRepository _specialtyRepository;
     private readonly IImageStorageService _imageStorageService;
-    private readonly IValidator<CreateDoctorDto> _createValidator;
-    private readonly IValidator<UpdateDoctorDto> _updateValidator;
+    private readonly IAppointmentSlotService _appointmentSlotService;
+    private readonly IValidator<CreateDoctorRequest> _createValidator;
+    private readonly IValidator<UpdateDoctorRequest> _updateValidator;
     private readonly ILogger<DoctorService> _logger;
 
     public DoctorService(
         IDoctorRepository doctorRepository,
         ISpecialtyRepository specialtyRepository,
         IImageStorageService imageStorageService,
-        IValidator<CreateDoctorDto> createValidator,
-        IValidator<UpdateDoctorDto> updateValidator,
+        IAppointmentSlotService appointmentSlotService,
+        IValidator<CreateDoctorRequest> createValidator,
+        IValidator<UpdateDoctorRequest> updateValidator,
         ILogger<DoctorService> logger)
     {
         _doctorRepository = doctorRepository;
         _specialtyRepository = specialtyRepository;
         _imageStorageService = imageStorageService;
+        _appointmentSlotService = appointmentSlotService;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
         _logger = logger;
@@ -46,29 +49,32 @@ public class DoctorService : IDoctorService
     }
 
     public async Task<DoctorDto> CreateAsync(
-        CreateDoctorDto createDoctorDto,
+        CreateDoctorRequest createDoctorRequest,
         CancellationToken cancellationToken = default)
     {
-        await _createValidator.ValidateAndThrowAsync(createDoctorDto, cancellationToken);
-        await EnsureSpecialtyExistsAsync(createDoctorDto.SpecialtyId);
+
+
+        //check validation du liệu nhận vào => nếu không pass => khỏi làm gì
+        await _createValidator.ValidateAndThrowAsync(createDoctorRequest, cancellationToken);
+        await EnsureSpecialtyExistsAsync(createDoctorRequest.SpecialtyId);
 
         ImageUploadResult? uploadedAvatar = null;
-        if (createDoctorDto.Avatar is not null)
+        if (createDoctorRequest.Avatar is not null)
         {
             uploadedAvatar = await _imageStorageService.UploadAsync(
-                createDoctorDto.Avatar,
+                createDoctorRequest.Avatar,
                 cancellationToken);
         }
 
         var doctor = new Doctor
         {
-            FullName = createDoctorDto.FullName.Trim(),
-            PhoneNumber = createDoctorDto.PhoneNumber?.Trim(),
-            Email = createDoctorDto.Email?.Trim(),
-            Gender = createDoctorDto.Gender,
-            Address = createDoctorDto.Address?.Trim(),
-            CareerStartDate = createDoctorDto.CareerStartDate,
-            SpecialtyId = createDoctorDto.SpecialtyId,
+            FullName = createDoctorRequest.FullName.Trim(),
+            PhoneNumber = createDoctorRequest.PhoneNumber?.Trim(),
+            Email = createDoctorRequest.Email?.Trim(),
+            Gender = createDoctorRequest.Gender,
+            Address = createDoctorRequest.Address?.Trim(),
+            CareerStartDate = createDoctorRequest.CareerStartDate,
+            SpecialtyId = createDoctorRequest.SpecialtyId,
             AvatarUrl = uploadedAvatar?.Url,
             AvatarStorageKey = uploadedAvatar?.StorageKey,
             CreatedAt = DateTime.UtcNow
@@ -96,10 +102,10 @@ public class DoctorService : IDoctorService
 
     public async Task<DoctorDto?> UpdateAsync(
         int doctorId,
-        UpdateDoctorDto updateDoctorDto,
+        UpdateDoctorRequest updateDoctorRequest,
         CancellationToken cancellationToken = default)
     {
-        await _updateValidator.ValidateAndThrowAsync(updateDoctorDto, cancellationToken);
+        await _updateValidator.ValidateAndThrowAsync(updateDoctorRequest, cancellationToken);
 
         var doctor = await _doctorRepository.GetDoctorByIdTrackingAsync(doctorId);
         if (doctor is null)
@@ -107,26 +113,26 @@ public class DoctorService : IDoctorService
             return null;
         }
 
-        await EnsureSpecialtyExistsAsync(updateDoctorDto.SpecialtyId);
+        await EnsureSpecialtyExistsAsync(updateDoctorRequest.SpecialtyId);
 
         var oldAvatarStorageKey = doctor.AvatarStorageKey;
         ImageUploadResult? uploadedAvatar = null;
 
         // Upload trước khi sửa entity: Cloudinary lỗi thì dữ liệu Doctor và ảnh cũ vẫn nguyên vẹn.
-        if (updateDoctorDto.Avatar is not null)
+        if (updateDoctorRequest.Avatar is not null)
         {
             uploadedAvatar = await _imageStorageService.UploadAsync(
-                updateDoctorDto.Avatar,
+                updateDoctorRequest.Avatar,
                 cancellationToken);
         }
 
-        doctor.FullName = updateDoctorDto.FullName.Trim();
-        doctor.PhoneNumber = updateDoctorDto.PhoneNumber?.Trim();
-        doctor.Email = updateDoctorDto.Email?.Trim();
-        doctor.Gender = updateDoctorDto.Gender;
-        doctor.Address = updateDoctorDto.Address?.Trim();
-        doctor.CareerStartDate = updateDoctorDto.CareerStartDate;
-        doctor.SpecialtyId = updateDoctorDto.SpecialtyId;
+        doctor.FullName = updateDoctorRequest.FullName.Trim();
+        doctor.PhoneNumber = updateDoctorRequest.PhoneNumber?.Trim();
+        doctor.Email = updateDoctorRequest.Email?.Trim();
+        doctor.Gender = updateDoctorRequest.Gender;
+        doctor.Address = updateDoctorRequest.Address?.Trim();
+        doctor.CareerStartDate = updateDoctorRequest.CareerStartDate;
+        doctor.SpecialtyId = updateDoctorRequest.SpecialtyId;
         doctor.UpdatedAt = DateTime.UtcNow;
 
         if (uploadedAvatar is not null)
@@ -134,7 +140,7 @@ public class DoctorService : IDoctorService
             doctor.AvatarUrl = uploadedAvatar.Url;
             doctor.AvatarStorageKey = uploadedAvatar.StorageKey;
         }
-        else if (updateDoctorDto.RemoveAvatar)
+        else if (updateDoctorRequest.RemoveAvatar)
         {
             doctor.AvatarUrl = null;
             doctor.AvatarStorageKey = null;
@@ -156,7 +162,7 @@ public class DoctorService : IDoctorService
                 exception);
         }
 
-        var avatarWasChanged = uploadedAvatar is not null || updateDoctorDto.RemoveAvatar;
+        var avatarWasChanged = uploadedAvatar is not null || updateDoctorRequest.RemoveAvatar;
         if (avatarWasChanged)
         {
             // Chỉ xóa ảnh cũ sau khi DB đã trỏ sang ảnh mới (hoặc đã bỏ ảnh) thành công.
@@ -179,6 +185,7 @@ public class DoctorService : IDoctorService
         // Soft delete nên giữ ảnh để sau này còn có thể khôi phục Doctor.
         doctor.IsDelete = true;
         await _doctorRepository.SaveChangesAsync();
+        await _appointmentSlotService.EnsureRollingWindowAsync();
         return true;
     }
 
@@ -192,7 +199,7 @@ public class DoctorService : IDoctorService
         throw new ValidationException(new[]
         {
             new ValidationFailure(
-                nameof(CreateDoctorDto.SpecialtyId),
+                nameof(CreateDoctorRequest.SpecialtyId),
                 "Chuyên khoa không tồn tại.")
         });
     }

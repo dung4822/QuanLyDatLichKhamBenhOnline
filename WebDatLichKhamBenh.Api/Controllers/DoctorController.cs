@@ -1,10 +1,11 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
-using WebDatLichKhamBenh.Api.Models.Doctors;
 using WebDatLichKhamBenh.Application.DTOs.Doctors;
 using WebDatLichKhamBenh.Application.DTOs.Images;
 using WebDatLichKhamBenh.Application.Exceptions;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
+using CreateDoctorApiRequest = WebDatLichKhamBenh.Api.Models.Doctors.CreateDoctorRequest;
+using UpdateDoctorApiRequest = WebDatLichKhamBenh.Api.Models.Doctors.UpdateDoctorRequest;
 
 namespace WebDatLichKhamBenh.Api.Controllers;
 
@@ -39,11 +40,11 @@ public class DoctorsController : ControllerBase
     [HttpPost]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaximumMultipartRequestSize)]
-    public async Task<IActionResult> Create([FromForm] CreateDoctorRequest request)
+    public async Task<IActionResult> Create([FromForm] CreateDoctorApiRequest request)
     {
         using var avatarStream = request.Avatar?.OpenReadStream();
 
-        var createDoctorDto = new CreateDoctorDto
+        var createDoctorRequest = new CreateDoctorRequest
         {
             FullName = request.FullName,
             PhoneNumber = request.PhoneNumber,
@@ -58,7 +59,7 @@ public class DoctorsController : ControllerBase
         try
         {
             var createdDoctor = await _doctorService.CreateAsync(
-                createDoctorDto,
+                createDoctorRequest,
                 HttpContext.RequestAborted);
 
             return CreatedAtAction(
@@ -85,11 +86,11 @@ public class DoctorsController : ControllerBase
     [RequestSizeLimit(MaximumMultipartRequestSize)]
     public async Task<IActionResult> Update(
         int id,
-        [FromForm] UpdateDoctorRequest request)
+        [FromForm] UpdateDoctorApiRequest request)
     {
         using var avatarStream = request.Avatar?.OpenReadStream();
 
-        var updateDoctorDto = new UpdateDoctorDto
+        var updateDoctorRequest = new UpdateDoctorRequest
         {
             FullName = request.FullName,
             PhoneNumber = request.PhoneNumber,
@@ -106,7 +107,7 @@ public class DoctorsController : ControllerBase
         {
             var updatedDoctor = await _doctorService.UpdateAsync(
                 id,
-                updateDoctorDto,
+                updateDoctorRequest,
                 HttpContext.RequestAborted);
 
             return updatedDoctor is null
@@ -134,14 +135,14 @@ public class DoctorsController : ControllerBase
         return deleted ? NoContent() : NotFound();
     }
 
-    private static ImageUploadDto? ToImageUpload(IFormFile? file, Stream? content)
+    private static ImageUploadRequest? ToImageUpload(IFormFile? file, Stream? content)
     {
         if (file is null || content is null)
         {
             return null;
         }
 
-        return new ImageUploadDto(
+        return new ImageUploadRequest(
             content,
             Path.GetFileName(file.FileName),
             file.ContentType,

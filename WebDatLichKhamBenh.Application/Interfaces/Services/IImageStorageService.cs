@@ -5,7 +5,7 @@ namespace WebDatLichKhamBenh.Application.Interfaces.Services;
 public interface IImageStorageService
 {
     Task<ImageUploadResult> UploadAsync(
-        ImageUploadDto image,
+        ImageUploadRequest image,
         CancellationToken cancellationToken = default);
 
     Task DeleteAsync(
