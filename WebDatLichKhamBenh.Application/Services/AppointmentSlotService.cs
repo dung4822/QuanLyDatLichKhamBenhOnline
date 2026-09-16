@@ -11,15 +11,18 @@ namespace WebDatLichKhamBenh.Application.Services;
 
 public class AppointmentSlotService : IAppointmentSlotService
 {
+    private readonly IClinicScheduleTransaction _transaction;
     private const int SlotMinutes = 30;
     private const int RollingWindowDays = 7;
     private readonly IAppointmentSlotRepository _appointmentSlotRepository;
     private readonly IDoctorRepository _doctorRepository;
 
     public AppointmentSlotService(
+        IClinicScheduleTransaction transaction,
         IAppointmentSlotRepository appointmentSlotRepository,
         IDoctorRepository doctorRepository)
     {
+        _transaction = transaction;
         _appointmentSlotRepository = appointmentSlotRepository;
         _doctorRepository = doctorRepository;
     }
@@ -53,7 +56,11 @@ public class AppointmentSlotService : IAppointmentSlotService
         return SyncRangeAsync(today, today.AddDays(RollingWindowDays - 1), null, cancellationToken);
     }
 
-    public async Task SyncRangeAsync(
+    public Task SyncRangeAsync(DateOnly fromDate, DateOnly toDate, int? doctorId = null,
+        CancellationToken cancellationToken = default)
+        => _transaction.ExecuteAsync(() => SyncRangeCoreAsync(fromDate, toDate, doctorId, cancellationToken), cancellationToken);
+
+    private async Task SyncRangeCoreAsync(
         DateOnly fromDate,
         DateOnly toDate,
         int? doctorId = null,
@@ -80,6 +87,7 @@ public class AppointmentSlotService : IAppointmentSlotService
         var desiredSlots = BuildDesiredSlots(schedules, from, to);
         var (hospitalReasons, doctorReasons) = BuildUnavailableReasons(nonWorkingDays);
         var existingByKey = existingSlots.ToDictionary(slot => (slot.DoctorId, slot.Date, slot.StartTime));
+        var bookedSlots = existingSlots.Where(slot => slot.Status == AppointmentSlotStatus.Booked).ToList();
         var createdSlots = new List<AppointmentSlot>();
         var changedAt = DateTime.UtcNow;
 
@@ -92,6 +100,11 @@ public class AppointmentSlotService : IAppointmentSlotService
                 doctorReasons,
                 desiredSlot.DoctorId,
                 desiredSlot.Date);
+            if (unavailableReason is null && bookedSlots.Any(booked =>
+                booked.DoctorId == desiredSlot.DoctorId && booked.Date == desiredSlot.Date &&
+                booked.StartTime != desiredSlot.StartTime &&
+                booked.StartTime < desiredSlot.EndTime && desiredSlot.StartTime < booked.EndTime))
+                unavailableReason = "Khoảng giờ chồng với lịch hẹn đã đặt.";
 
             if (!existingByKey.TryGetValue(key, out var existingSlot))
             {

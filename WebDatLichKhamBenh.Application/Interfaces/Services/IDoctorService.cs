@@ -9,7 +9,7 @@ namespace WebDatLichKhamBenh.Application.Interfaces.Services
 {
     public interface IDoctorService
     {
-        Task<List<DoctorDto>> GetAllAsync();
+        Task<List<DoctorDto>> GetAllAsync(int? specialtyId = null);
         Task<DoctorDto?> GetByIdAsync(int doctorId);
         Task<DoctorDto> CreateAsync(
             CreateDoctorRequest createDoctorRequest,

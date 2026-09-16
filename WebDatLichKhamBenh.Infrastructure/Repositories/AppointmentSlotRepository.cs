@@ -23,6 +23,7 @@ public class AppointmentSlotRepository : IAppointmentSlotRepository
             .Include(doctorShift => doctorShift.Shift)
             .Where(doctorShift => !doctorShift.IsDeleted &&
                                   !doctorShift.Doctor.IsDelete &&
+                                  doctorShift.Doctor.Specialty.Status.ToLower() == "active" &&
                                   !doctorShift.Shift.IsDeleted &&
                                   doctorShift.Shift.IsActive);
 

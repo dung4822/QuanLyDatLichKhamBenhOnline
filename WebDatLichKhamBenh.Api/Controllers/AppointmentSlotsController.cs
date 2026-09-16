@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 
 namespace WebDatLichKhamBenh.Api.Controllers;
@@ -16,6 +17,7 @@ public class AppointmentSlotsController : ControllerBase
     }
 
     [HttpGet]
+    [AllowAnonymous]
     public async Task<IActionResult> GetAvailable(
         int doctorId,
         [FromQuery] DateOnly? fromDate,

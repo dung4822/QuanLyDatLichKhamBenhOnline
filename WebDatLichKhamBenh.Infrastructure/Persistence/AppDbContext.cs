@@ -16,6 +16,10 @@ public class AppDbContext : DbContext
     public DbSet<DoctorShift> DoctorShifts { get; set; }
     public DbSet<NonWorkingDay> NonWorkingDays { get; set; }
     public DbSet<AppointmentSlot> AppointmentSlots { get; set; }
+    public DbSet<Appointment> Appointments { get; set; }
+    public DbSet<UserAccount> UserAccounts { get; set; }
+    public DbSet<UserSession> UserSessions { get; set; }
+    public DbSet<AppointmentHistory> AppointmentHistories { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using WebDatLichKhamBenh.Application.DTOs.Patients;
 using WebDatLichKhamBenh.Application.Exceptions;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
@@ -7,6 +8,7 @@ using WebDatLichKhamBenh.Application.Interfaces.Services;
 namespace WebDatLichKhamBenh.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/patients")]
 public class PatientsController : ControllerBase
 {

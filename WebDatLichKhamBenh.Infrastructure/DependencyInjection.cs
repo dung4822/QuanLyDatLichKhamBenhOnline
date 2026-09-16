@@ -26,6 +26,10 @@ public static class DependencyInjection
         services.AddScoped<IDoctorShiftRepository, DoctorShiftRepository>();
         services.AddScoped<INonWorkingDayRepository, NonWorkingDayRepository>();
         services.AddScoped<IAppointmentSlotRepository, AppointmentSlotRepository>();
+        services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+        services.AddScoped<IAccountRepository, AccountRepository>();
+        services.AddSingleton<IPasswordService, WebDatLichKhamBenh.Infrastructure.Security.PasswordService>();
+        services.AddScoped<IClinicScheduleTransaction, ClinicScheduleTransaction>();
         services.AddSingleton(new CloudinarySettings
         {
             CloudName = configuration[$"{CloudinarySettings.SectionName}:CloudName"] ?? string.Empty,

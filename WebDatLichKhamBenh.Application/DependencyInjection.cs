@@ -19,6 +19,8 @@ public static class DependencyInjection
         services.AddScoped<IDoctorShiftService, DoctorShiftService>();
         services.AddScoped<INonWorkingDayService, NonWorkingDayService>();
         services.AddScoped<IAppointmentSlotService, AppointmentSlotService>();
+        services.AddScoped<IAppointmentService, AppointmentService>();
+        services.AddScoped<IAccountService, AccountService>();
         return services;
     }
 }

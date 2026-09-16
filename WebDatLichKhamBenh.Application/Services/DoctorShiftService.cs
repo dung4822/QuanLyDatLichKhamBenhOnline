@@ -5,11 +5,14 @@ using WebDatLichKhamBenh.Application.Exceptions;
 using WebDatLichKhamBenh.Application.Interfaces.Repositories;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 using WebDatLichKhamBenh.Domain.Entities;
+using WebDatLichKhamBenh.Application.Time;
 
 namespace WebDatLichKhamBenh.Application.Services;
 
 public class DoctorShiftService : IDoctorShiftService
 {
+    private readonly IClinicScheduleTransaction _transaction;
+    private readonly IAppointmentRepository _appointments;
     private readonly IDoctorShiftRepository _doctorShiftRepository;
     private readonly IDoctorRepository _doctorRepository;
     private readonly IShiftRepository _shiftRepository;
@@ -17,12 +20,16 @@ public class DoctorShiftService : IDoctorShiftService
     private readonly IValidator<ReplaceDoctorShiftsRequest> _replaceValidator;
 
     public DoctorShiftService(
+        IClinicScheduleTransaction transaction,
+        IAppointmentRepository appointments,
         IDoctorShiftRepository doctorShiftRepository,
         IDoctorRepository doctorRepository,
         IShiftRepository shiftRepository,
         IAppointmentSlotService appointmentSlotService,
         IValidator<ReplaceDoctorShiftsRequest> replaceValidator)
     {
+        _transaction = transaction;
+        _appointments = appointments;
         _doctorShiftRepository = doctorShiftRepository;
         _doctorRepository = doctorRepository;
         _shiftRepository = shiftRepository;
@@ -42,7 +49,11 @@ public class DoctorShiftService : IDoctorShiftService
         return doctorShifts;
     }
     //thực ra hàm này chính là biến thể Update kiểu nhiều
-    public async Task<List<DoctorShiftDto>?> ReplaceWeeklyScheduleAsync(
+    public Task<List<DoctorShiftDto>?> ReplaceWeeklyScheduleAsync(
+        int doctorId, ReplaceDoctorShiftsRequest request)
+        => _transaction.ExecuteAsync(() => ReplaceWeeklyScheduleCoreAsync(doctorId, request));
+
+    private async Task<List<DoctorShiftDto>?> ReplaceWeeklyScheduleCoreAsync(
         int doctorId,
         ReplaceDoctorShiftsRequest replaceDoctorShiftsRequest)
     {
@@ -87,6 +98,11 @@ public class DoctorShiftService : IDoctorShiftService
             .Select(doctorShift => doctorShift.ShiftId)
             .ToHashSet();
         var changedAt = DateTime.UtcNow;
+        var removedAssignmentIds = currentDoctorShifts
+            .Where(x => !selectedShiftIds.Contains(x.ShiftId)).Select(x => x.DoctorShiftId).ToArray();
+        if (removedAssignmentIds.Length > 0 && await _appointments.HasUpcomingConfirmedAsync(
+            ClinicClock.Now, doctorShiftIds: removedAssignmentIds))
+            throw new AppointmentConflictException("Ca bị bỏ chọn đang có lịch hẹn chưa kết thúc. Hãy xử lý lịch hẹn trước.");
 
         // Các ca bị bỏ tick được xóa mềm để còn lịch sử cho AppointmentSlot về sau.
         foreach (var doctorShift in currentDoctorShifts.Where(

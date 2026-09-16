@@ -9,5 +9,5 @@ public class Specialty
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 
-    public ICollection<Doctor> Doctors { get; set; }
+    public ICollection<Doctor> Doctors { get; set; } = new List<Doctor>();
 }

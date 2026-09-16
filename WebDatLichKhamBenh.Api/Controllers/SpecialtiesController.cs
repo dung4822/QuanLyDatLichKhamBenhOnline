@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using WebDatLichKhamBenh.Application.DTOs.Specialties;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 
@@ -16,6 +17,7 @@ public class SpecialtiesController : ControllerBase
     }
 
     [HttpGet]
+    [AllowAnonymous]
     public async Task<IActionResult> GetAll()
     {
         var specialties = await _specialtyService.GetAllAsync();
@@ -31,6 +33,7 @@ public class SpecialtiesController : ControllerBase
     }
 #endif
     [HttpGet("{id}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetById(int id)
     {
         var specialty = await _specialtyService.GetByIdAsync(id);

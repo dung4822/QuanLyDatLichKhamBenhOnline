@@ -4,11 +4,14 @@ using WebDatLichKhamBenh.Application.Exceptions;
 using WebDatLichKhamBenh.Application.Interfaces.Repositories;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 using WebDatLichKhamBenh.Domain.Entities;
+using WebDatLichKhamBenh.Application.Time;
 
 namespace WebDatLichKhamBenh.Application.Services;
 
 public class ShiftService : IShiftService
 {
+    private readonly IClinicScheduleTransaction _transaction;
+    private readonly IAppointmentRepository _appointments;
     private readonly IShiftRepository _shiftRepository;
     private readonly IAppointmentSlotRepository _appointmentSlotRepository;
     private readonly IAppointmentSlotService _appointmentSlotService;
@@ -16,12 +19,16 @@ public class ShiftService : IShiftService
     private readonly IValidator<UpdateShiftRequest> _updateValidator;
 
     public ShiftService(
+        IClinicScheduleTransaction transaction,
+        IAppointmentRepository appointments,
         IShiftRepository shiftRepository,
         IAppointmentSlotRepository appointmentSlotRepository,
         IAppointmentSlotService appointmentSlotService,
         IValidator<CreateShiftRequest> createValidator,
         IValidator<UpdateShiftRequest> updateValidator)
     {
+        _transaction = transaction;
+        _appointments = appointments;
         _shiftRepository = shiftRepository;
         _appointmentSlotRepository = appointmentSlotRepository;
         _appointmentSlotService = appointmentSlotService;
@@ -68,7 +75,10 @@ public class ShiftService : IShiftService
         return MapToDto(shift);
     }
 
-    public async Task<ShiftDto?> UpdateAsync(int shiftId, UpdateShiftRequest updateShiftRequest)
+    public Task<ShiftDto?> UpdateAsync(int shiftId, UpdateShiftRequest updateShiftRequest)
+        => _transaction.ExecuteAsync(() => UpdateCoreAsync(shiftId, updateShiftRequest));
+
+    private async Task<ShiftDto?> UpdateCoreAsync(int shiftId, UpdateShiftRequest updateShiftRequest)
     {
         await _updateValidator.ValidateAndThrowAsync(updateShiftRequest);
 
@@ -79,6 +89,12 @@ public class ShiftService : IShiftService
         }
 
         await EnsureNoOverlappingAssignmentsAsync(shiftId, updateShiftRequest);
+
+        var scheduleChanged = shift.DayOfWeek != updateShiftRequest.DayOfWeek ||
+            shift.StartTime != updateShiftRequest.StartTime || shift.EndTime != updateShiftRequest.EndTime ||
+            shift.IsActive != updateShiftRequest.IsActive;
+        if (scheduleChanged && await _appointments.HasUpcomingConfirmedAsync(ClinicClock.Now, shiftId: shiftId))
+            throw new AppointmentConflictException("Ca này có lịch hẹn chưa kết thúc. Hãy xử lý lịch hẹn trước khi thay đổi ca.");
 
         shift.DayOfWeek = updateShiftRequest.DayOfWeek;
         shift.Name = updateShiftRequest.Name.Trim();
@@ -92,13 +108,19 @@ public class ShiftService : IShiftService
         return MapToDto(shift);
     }
 
-    public async Task<bool> DeleteAsync(int shiftId)
+    public Task<bool> DeleteAsync(int shiftId)
+        => _transaction.ExecuteAsync(() => DeleteCoreAsync(shiftId));
+
+    private async Task<bool> DeleteCoreAsync(int shiftId)
     {
         var shift = await _shiftRepository.GetByIdTrackingAsync(shiftId);
         if (shift is null)
         {
             return false;
         }
+
+        if (await _appointments.HasUpcomingConfirmedAsync(ClinicClock.Now, shiftId: shiftId))
+            throw new AppointmentConflictException("Ca này có lịch hẹn chưa kết thúc, không thể xóa.");
 
         var deletedAt = DateTime.UtcNow;
         shift.IsDeleted = true;

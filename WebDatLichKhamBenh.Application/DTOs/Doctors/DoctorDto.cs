@@ -9,6 +9,8 @@ namespace WebDatLichKhamBenh.Application.DTOs.Doctors
     public record DoctorDto
     {
         public int DoctorId { get; set; }
+        public int SpecialtyId { get; set; }
+        public string SpecialtyName { get; set; } = string.Empty;
         public string FullName { get; set; } = string.Empty;
         public string? PhoneNumber { get; set; }
         public string? Email { get; set; }

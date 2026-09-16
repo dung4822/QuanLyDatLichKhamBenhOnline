@@ -25,11 +25,13 @@ namespace WebDatLichKhamBenh.Infrastructure.Repositories
 
         public async Task<DoctorDto?> GetDoctorByIdAsync(int doctorId)
         {
-            return await _context.Doctors.
-                Where(d => d.DoctorId == doctorId)
+            return await _context.Doctors.AsNoTracking()
+                .Where(d => d.DoctorId == doctorId)
                 .Select(d => new DoctorDto
                 {
                     DoctorId = d.DoctorId,
+                    SpecialtyId = d.SpecialtyId,
+                    SpecialtyName = d.Specialty.Name,
                     FullName = d.FullName,
                     PhoneNumber = d.PhoneNumber,
                     Email = d.Email,
@@ -46,12 +48,20 @@ namespace WebDatLichKhamBenh.Infrastructure.Repositories
             return await _context.Doctors.FirstOrDefaultAsync(d => d.DoctorId == doctorId);
         }
 
-        public async Task<List<DoctorDto>> GetListDoctorAsync()
+        public async Task<List<DoctorDto>> GetListDoctorAsync(int? specialtyId = null)
         {
-            return await _context.Doctors
+            var query = _context.Doctors.AsNoTracking();
+            if (specialtyId.HasValue)
+            {
+                query = query.Where(d => d.SpecialtyId == specialtyId.Value);
+            }
+
+            return await query
                 .Select(d => new DoctorDto
                 {
                     DoctorId = d.DoctorId,
+                    SpecialtyId = d.SpecialtyId,
+                    SpecialtyName = d.Specialty.Name,
                     FullName = d.FullName,
                     PhoneNumber = d.PhoneNumber,
                     Email = d.Email,

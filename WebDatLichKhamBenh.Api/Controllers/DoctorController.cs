@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using WebDatLichKhamBenh.Application.DTOs.Doctors;
 using WebDatLichKhamBenh.Application.DTOs.Images;
 using WebDatLichKhamBenh.Application.Exceptions;
@@ -22,12 +23,14 @@ public class DoctorsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    [AllowAnonymous]
+    public async Task<IActionResult> GetAll([FromQuery] int? specialtyId)
     {
-        return Ok(await _doctorService.GetAllAsync());
+        return Ok(await _doctorService.GetAllAsync(specialtyId));
     }
 
     [HttpGet("{id:int}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetById(int id)
     {
         var doctor = await _doctorService.GetByIdAsync(id);

@@ -11,6 +11,8 @@ namespace WebDatLichKhamBenh.Application.Services;
 
 public class NonWorkingDayService : INonWorkingDayService
 {
+    private readonly IClinicScheduleTransaction _transaction;
+    private readonly IAppointmentRepository _appointments;
     private readonly INonWorkingDayRepository _nonWorkingDayRepository;
     private readonly IDoctorRepository _doctorRepository;
     private readonly IValidator<CreateNonWorkingDayRequest> _createValidator;
@@ -18,12 +20,16 @@ public class NonWorkingDayService : INonWorkingDayService
     private readonly IAppointmentSlotService _appointmentSlotService;
 
     public NonWorkingDayService(
+        IClinicScheduleTransaction transaction,
+        IAppointmentRepository appointments,
         INonWorkingDayRepository nonWorkingDayRepository,
         IDoctorRepository doctorRepository,
         IValidator<CreateNonWorkingDayRequest> createValidator,
         IValidator<UpdateNonWorkingDayRequest> updateValidator,
         IAppointmentSlotService appointmentSlotService)
     {
+        _transaction = transaction;
+        _appointments = appointments;
         _nonWorkingDayRepository = nonWorkingDayRepository;
         _doctorRepository = doctorRepository;
         _createValidator = createValidator;
@@ -43,11 +49,15 @@ public class NonWorkingDayService : INonWorkingDayService
         return nonWorkingDay is null ? null : MapToDto(nonWorkingDay);
     }
 
-    public async Task<NonWorkingDayDto> CreateAsync(CreateNonWorkingDayRequest createNonWorkingDayRequest)
+    public Task<NonWorkingDayDto> CreateAsync(CreateNonWorkingDayRequest request)
+        => _transaction.ExecuteAsync(() => CreateCoreAsync(request));
+
+    private async Task<NonWorkingDayDto> CreateCoreAsync(CreateNonWorkingDayRequest createNonWorkingDayRequest)
     {
         await _createValidator.ValidateAndThrowAsync(createNonWorkingDayRequest);
         await EnsureDoctorExistsAsync(createNonWorkingDayRequest.DoctorId);
         await EnsureNoDuplicateAsync(createNonWorkingDayRequest.Date, createNonWorkingDayRequest.DoctorId);
+        await EnsureNoAppointmentsAsync(createNonWorkingDayRequest.Date, createNonWorkingDayRequest.DoctorId);
 
         var nonWorkingDay = new NonWorkingDay
         {
@@ -74,7 +84,10 @@ public class NonWorkingDayService : INonWorkingDayService
         return await GetSavedNonWorkingDayAsync(nonWorkingDay.NonWorkingDayId);
     }
 
-    public async Task<NonWorkingDayDto?> UpdateAsync(
+    public Task<NonWorkingDayDto?> UpdateAsync(int id, UpdateNonWorkingDayRequest request)
+        => _transaction.ExecuteAsync(() => UpdateCoreAsync(id, request));
+
+    private async Task<NonWorkingDayDto?> UpdateCoreAsync(
         int nonWorkingDayId,
         UpdateNonWorkingDayRequest updateNonWorkingDayRequest)
     {
@@ -95,6 +108,7 @@ public class NonWorkingDayService : INonWorkingDayService
             updateNonWorkingDayRequest.DoctorId,
             nonWorkingDayId);
 
+        await EnsureNoAppointmentsAsync(updateNonWorkingDayRequest.Date, updateNonWorkingDayRequest.DoctorId);
         nonWorkingDay.Date = updateNonWorkingDayRequest.Date;
         nonWorkingDay.DoctorId = updateNonWorkingDayRequest.DoctorId;
         nonWorkingDay.Reason = NormalizeReason(updateNonWorkingDayRequest.Reason);
@@ -106,7 +120,10 @@ public class NonWorkingDayService : INonWorkingDayService
         return await GetSavedNonWorkingDayAsync(nonWorkingDayId);
     }
 
-    public async Task<bool> DeleteAsync(int nonWorkingDayId)
+    public Task<bool> DeleteAsync(int nonWorkingDayId)
+        => _transaction.ExecuteAsync(() => DeleteCoreAsync(nonWorkingDayId));
+
+    private async Task<bool> DeleteCoreAsync(int nonWorkingDayId)
     {
         var nonWorkingDay = await _nonWorkingDayRepository.GetByIdTrackingAsync(nonWorkingDayId);
         if (nonWorkingDay is null)
@@ -131,6 +148,12 @@ public class NonWorkingDayService : INonWorkingDayService
     public Task<bool> IsDoctorUnavailableAsync(int doctorId, DateOnly date)
     {
         return _nonWorkingDayRepository.IsDoctorUnavailableAsync(doctorId, date);
+    }
+
+    private async Task EnsureNoAppointmentsAsync(DateOnly date, int? doctorId)
+    {
+        if (await _appointments.HasUpcomingConfirmedAsync(ClinicClock.Now, doctorId: doctorId, date: date))
+            throw new AppointmentConflictException("Ngày nghỉ ảnh hưởng lịch hẹn đã xác nhận. Hãy xử lý lịch hẹn trước.");
     }
 
     private async Task EnsureDoctorExistsAsync(int? doctorId)

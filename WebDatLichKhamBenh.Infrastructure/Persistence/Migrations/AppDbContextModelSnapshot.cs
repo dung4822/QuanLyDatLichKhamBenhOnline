@@ -22,6 +22,145 @@ namespace WebDatLichKhamBenh.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.Appointment", b =>
+                {
+                    b.Property<int>("AppointmentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("AppointmentId"));
+
+                    b.Property<int>("AppointmentSlotId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("DoctorFullName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("DoctorId")
+                        .HasColumnType("integer");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<string>("PatientFullName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("PatientId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PatientPhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("SpecialtyId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SpecialtyName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("AppointmentId");
+
+                    b.HasIndex("AppointmentSlotId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" <> 1");
+
+                    b.HasIndex("SpecialtyId");
+
+                    b.HasIndex("Date", "StartTime", "AppointmentId");
+
+                    b.HasIndex("DoctorId", "Date", "StartTime");
+
+                    b.HasIndex("PatientId", "Date", "StartTime");
+
+                    b.ToTable("Appointments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Appointments_Status", "\"Status\" IN (0, 1, 2, 3)");
+
+                            t.HasCheckConstraint("CK_Appointments_Time", "\"EndTime\" > \"StartTime\"");
+                        });
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.AppointmentHistory", b =>
+                {
+                    b.Property<long>("AppointmentHistoryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("AppointmentHistoryId"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<Guid>("ActorAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActorDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ActorRole")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("AfterJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("AppointmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("BeforeJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("AppointmentHistoryId");
+
+                    b.HasIndex("ActorAccountId");
+
+                    b.HasIndex("AppointmentId", "AppointmentHistoryId");
+
+                    b.ToTable("AppointmentHistories", (string)null);
+                });
+
             modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.AppointmentSlot", b =>
                 {
                     b.Property<int>("AppointmentSlotId")
@@ -342,6 +481,159 @@ namespace WebDatLichKhamBenh.Infrastructure.Persistence.Migrations
                     b.ToTable("Specialties", (string)null);
                 });
 
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.UserAccount", b =>
+                {
+                    b.Property<Guid>("UserAccountId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("DoctorId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<int>("FailedLoginAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LockedUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<int?>("PatientId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserAccountId");
+
+                    b.HasIndex("DoctorId")
+                        .IsUnique();
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique();
+
+                    b.HasIndex("PatientId")
+                        .IsUnique();
+
+                    b.ToTable("UserAccounts", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_UserAccounts_RoleLink", "(\"Role\" = 0 AND \"PatientId\" IS NOT NULL AND \"DoctorId\" IS NULL) OR (\"Role\" = 1 AND \"DoctorId\" IS NOT NULL AND \"PatientId\" IS NULL) OR (\"Role\" IN (2,3) AND \"PatientId\" IS NULL AND \"DoctorId\" IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.UserSession", b =>
+                {
+                    b.Property<Guid>("UserSessionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("UserSessionId");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserAccountId");
+
+                    b.ToTable("UserSessions");
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.Appointment", b =>
+                {
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.AppointmentSlot", "AppointmentSlot")
+                        .WithMany()
+                        .HasForeignKey("AppointmentSlotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.Doctor", "Doctor")
+                        .WithMany()
+                        .HasForeignKey("DoctorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.Specialty", "Specialty")
+                        .WithMany()
+                        .HasForeignKey("SpecialtyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AppointmentSlot");
+
+                    b.Navigation("Doctor");
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Specialty");
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.AppointmentHistory", b =>
+                {
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.UserAccount", "ActorAccount")
+                        .WithMany()
+                        .HasForeignKey("ActorAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.Appointment", "Appointment")
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ActorAccount");
+
+                    b.Navigation("Appointment");
+                });
+
             modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.AppointmentSlot", b =>
                 {
                     b.HasOne("WebDatLichKhamBenh.Domain.Entities.Doctor", "Doctor")
@@ -399,6 +691,34 @@ namespace WebDatLichKhamBenh.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Doctor");
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.UserAccount", b =>
+                {
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.Doctor", "Doctor")
+                        .WithOne()
+                        .HasForeignKey("WebDatLichKhamBenh.Domain.Entities.UserAccount", "DoctorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.Patient", "Patient")
+                        .WithOne()
+                        .HasForeignKey("WebDatLichKhamBenh.Domain.Entities.UserAccount", "PatientId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Doctor");
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.UserSession", b =>
+                {
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.UserAccount", "UserAccount")
+                        .WithMany()
+                        .HasForeignKey("UserAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
                 });
 
             modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.Doctor", b =>

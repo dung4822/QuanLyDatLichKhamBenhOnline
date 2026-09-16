@@ -10,7 +10,7 @@ namespace WebDatLichKhamBenh.Application.Interfaces.Repositories
 {
     public interface IDoctorRepository
     {
-        Task<List<DoctorDto>> GetListDoctorAsync();
+        Task<List<DoctorDto>> GetListDoctorAsync(int? specialtyId = null);
         Task<DoctorDto?> GetDoctorByIdAsync(int doctorId);
         Task<Doctor?> GetDoctorByIdTrackingAsync(int doctorId);
         Task AddAsync(Doctor doctor);
