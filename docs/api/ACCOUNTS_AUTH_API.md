@@ -11,12 +11,18 @@ Một hồ sơ chỉ được liên kết một tài khoản, kể cả tài kho
 Không tự nhận hồ sơ cũ bằng cách khớp email/số điện thoại. Admin xác minh danh tính ngoài hệ
 thống trước khi liên kết một tài khoản với hồ sơ có sẵn.
 
-Phiên đăng nhập dùng **opaque bearer token**, không phải JWT: token ngẫu nhiên 256 bit,
-database chỉ lưu SHA-256 của token, hết hạn sau 8 giờ. Gửi token qua HTTPS:
+Phiên đăng nhập dùng **Cookie Authentication của ASP.NET Core**, hết hạn cố định sau 8 giờ.
+`SignInAsync` tạo cookie `__Host-Clinic.Auth` đã được Data Protection mã hóa và bảo vệ
+chống sửa đổi. Cookie là HttpOnly, Secure, SameSite=Lax, Path=/, không có Domain và không
+lưu lâu dài (`IsPersistent=false`). Frontend không đọc cookie, không giữ accessToken.
+Database giữ UserSession để thu hồi phiên ngay; SessionId chỉ nằm trong cookie được bảo vệ.
+Không dùng ASP.NET Core Session (`AddSession`) cho đăng nhập.
 
-```http
-Authorization: Bearer <accessToken>
-```
+Mọi POST/PUT/PATCH/DELETE cần chống CSRF, kể cả đăng nhập, đăng ký và upload:
+
+1. Gọi `GET /api/auth/csrf` để nhận `{ "requestToken": "..." }` và cookie CSRF.
+2. Gửi `requestToken` qua header `X-CSRF-TOKEN`; trình duyệt tự gửi cookie.
+3. Lấy lại requestToken sau đăng nhập/đăng xuất/đổi mật khẩu vì danh tính đã thay đổi.
 
 Server đọc trạng thái tài khoản, vai trò và liên kết hiện tại ở mỗi request.
 Đăng xuất xóa phiên hiện tại; đổi mật khẩu hoặc sửa quyền/liên kết/IsActive xóa tất cả phiên
@@ -45,7 +51,8 @@ Hồ sơ chuyên môn bác sĩ được Admin cập nhật qua API doctors; GET 
 | Method | Route | Kết quả |
 |---|---|---|
 | POST | /api/auth/register | 201 AccountDto, không tự đăng nhập |
-| POST | /api/auth/login | 200 accessToken, tokenType, expiresAt, account |
+| GET | /api/auth/csrf | 200 requestToken và cookie CSRF; cho phép anonymous |
+| POST | /api/auth/login | 200 expiresAt, account và Set-Cookie; không trả token đăng nhập |
 | POST | /api/auth/logout | 204, thu hồi phiên hiện tại |
 | POST | /api/auth/change-password | 204, thu hồi mọi phiên; cần đăng nhập lại |
 | GET | /api/me/profile | 200 gồm account, patient hoặc doctor; staff có cả hai hồ sơ null |
@@ -148,13 +155,75 @@ và các giá trị trước đây. Lịch đã tồn tại vẫn giữ nguyên,
 
 ## Tích hợp frontend
 
-1. Đăng nhập lấy accessToken, dùng nút Authorize trong Swagger hoặc Authorization header.
-2. Gọi GET /api/me/profile để lấy role và PatientId/DoctorId đã được server xác minh.
-3. Patient đặt lịch dùng patientId từ hồ sơ của mình; không nhận ID từ người dùng nhập tùy ý.
-4. 401: cần đăng nhập lại. 403: thao tác không được cấp quyền. 404: không tồn tại hoặc không
-   được phép biết dữ liệu đó. 409: xung đột tài khoản/lịch. 429: thử lại sau.
-5. Không cache chung response cá nhân giữa các tài khoản. Bản đầu nên giữ bearer token trong
-   bộ nhớ ứng dụng; không ghi vào log/URL và tránh lưu lâu dài ở localStorage.
+Chạy API bằng profile HTTPS: `dotnet run --project WebDatLichKhamBenh.Api --launch-profile https`.
+Frontend local cũng cần HTTPS khi gọi API HTTPS để cookie SameSite=Lax hoạt động cùng site.
+Dùng cùng hostname `localhost`, không trộn `127.0.0.1` với `localhost`.
+CORS chỉ cho phép các origin đã khai báo trong Program.cs và bật AllowCredentials.
+Khi triển khai, thay bằng origin frontend thực tế; không dùng wildcard với credentials.
+Thiết kế này dành cho frontend/API cùng site. Hai domain khác site cần thiết kế cookie/CORS
+riêng; không chỉ đổi URL rồi kỳ vọng cookie vẫn được gửi.
+
+```javascript
+const apiUrl = "https://localhost:7023";
+let csrfToken;
+
+async function refreshCsrfToken() {
+  const response = await fetch(`${apiUrl}/api/auth/csrf`, {
+    credentials: "include"
+  });
+  if (!response.ok) throw new Error("Không lấy được CSRF token");
+  csrfToken = (await response.json()).requestToken;
+}
+
+async function login(email, password) {
+  await refreshCsrfToken();
+  const response = await fetch(`${apiUrl}/api/auth/login`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-TOKEN": csrfToken
+    },
+    body: JSON.stringify({ email, password })
+  });
+  if (!response.ok) throw new Error("Đăng nhập thất bại");
+  const result = await response.json(); // expiresAt, account
+  await refreshCsrfToken(); // Token phải khớp danh tính vừa đăng nhập.
+  return result;
+}
+
+async function logout() {
+  const response = await fetch(`${apiUrl}/api/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "X-CSRF-TOKEN": csrfToken }
+  });
+  if (!response.ok) throw new Error("Đăng xuất thất bại");
+  await refreshCsrfToken();
+}
+
+async function getMyProfile() {
+  const response = await fetch(`${apiUrl}/api/me/profile`, {
+    credentials: "include"
+  });
+  if (!response.ok) throw new Error("Không lấy được hồ sơ");
+  return response.json();
+}
+```
+
+- CSRF token có thể giữ trong bộ nhớ JavaScript; cookie đăng nhập là HttpOnly.
+- Không thêm Authorization: Bearer, không lưu thông tin đăng nhập vào localStorage.
+- Patient đặt lịch dùng patientId từ `/api/me/profile`; server vẫn kiểm tra quyền sở hữu.
+- 400 có thông báo CSRF: lấy lại token. 401: đăng nhập lại. 403: không có quyền.
+  404: không tồn tại hoặc không được phép biết dữ liệu. 409: xung đột. 429: thử lại sau.
+- Không cache chung response cá nhân giữa các tài khoản.
+
+**Swagger:** mở HTTPS, gọi GET /api/auth/csrf, copy requestToken vào nút Authorize (CSRF),
+rồi gọi login. Gọi csrf và Authorize lại sau login. Swagger dùng cookie do trình duyệt
+lưu tự động; ô Authorize chỉ chứa CSRF token. GET đọc dữ liệu không cần CSRF token.
+
+**Postman / HTTP client:** bật cookie jar, dùng HTTPS và gửi header X-CSRF-TOKEN.
+Không tắt kiểm tra CSRF cho riêng công cụ test.
 
 ## Khởi tạo và migration
 
@@ -171,7 +240,15 @@ Trên máy hiện tại, thông tin Admin khởi tạo nằm tại .local/initia
 
 Factory EF đọc appsettings của API, appsettings theo ASPNETCORE_ENVIRONMENT, user-secrets khi
 Development và biến môi trường (ưu tiên cao nhất). Có thể đặt ConnectionStrings__DefaultConnection
-để chọn database đích. Migration mới chỉ thêm bảng, không gán quyền theo dữ liệu hồ sơ cũ.
+để chọn database đích. Migration `UseCookieAuthentication` xóa các phiên đăng nhập cũ,
+bỏ cột TokenHash và index tương ứng; tài khoản, mật khẩu, hồ sơ và lịch hẹn vẫn giữ nguyên.
+Cả nâng cấp lẫn rollback đều yêu cầu đăng nhập lại. Code mới cần chạy cùng schema mới.
+
+Cookie còn phụ thuộc Data Protection keys: khi triển khai container cần lưu key ring ở
+volume bền vững; nhiều instance cần dùng chung key ring và application name. Bảo vệ quyền
+truy cập thư mục keys. Khi chạy sau reverse proxy HTTPS, cấu hình trusted forwarded headers
+trước HTTPS redirection/authentication để server nhận đúng scheme. Chạy trực tiếp Kestrel
+HTTPS trong môi trường học tập không cần cấu hình proxy.
 
 ## Kiểm thử
 
@@ -184,3 +261,5 @@ dotnet test tests/WebDatLichKhamBenh.IntegrationTests/WebDatLichKhamBenh.Integra
 Fixture tạo database appointment_tests_<guid>, chạy migration, bootstrap Admin test rồi xóa
 chính database này khi kết thúc. Không dùng tên database nghiệp vụ làm database test.
 Các test đăng nhập thật qua HTTP; không giả lập auth handler hoặc bỏ qua kiểm tra quyền.
+
+Đọc [hướng dẫn học luồng Cookie Authentication](../learning/COOKIE_AUTHENTICATION.md) để theo dõi từng lớp và lý do thiết kế.

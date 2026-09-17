@@ -16,8 +16,10 @@ public class LoginRequest
     public string Password { get; set; } = string.Empty;
 }
 
-public class CreateAccountRequest : LoginRequest
+public class CreateAccountRequest
 {
+    public string Email { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public AccountRole Role { get; set; }
     public int? PatientId { get; set; }
@@ -36,9 +38,4 @@ public class ChangePasswordRequest
 {
     public string CurrentPassword { get; set; } = string.Empty;
     public string NewPassword { get; set; } = string.Empty;
-}
-
-public record LoginResponse(string AccessToken, DateTime ExpiresAt, AccountDto Account)
-{
-    public string TokenType => "Bearer";
 }

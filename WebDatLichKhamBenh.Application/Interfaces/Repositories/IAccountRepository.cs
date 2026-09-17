@@ -11,7 +11,8 @@ public interface IAccountRepository
     Task<int> CountActiveAdminsAsync();
     Task AddAsync(UserAccount account);
     Task AddSessionAsync(UserSession session);
-    Task<UserSession?> FindSessionAsync(string tokenHash);
+    Task<UserSession?> FindSessionAsync(Guid sessionId, Guid accountId);
+    Task DeleteExpiredSessionsAsync(Guid accountId, DateTime now);
     Task DeleteSessionsAsync(Guid accountId);
     Task DeleteSessionAsync(Guid sessionId, Guid accountId);
     Task SaveChangesAsync();

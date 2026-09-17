@@ -1,7 +1,33 @@
-@backend_HostAddress = http://localhost:5244
+@backend_HostAddress = https://localhost:7023
+@csrfToken = paste-requestToken-here
+@email = patient@example.com
+@password = replace-with-your-password
 
-GET {{backend_HostAddress}}/api/health/check
+# Bật cookie jar trong HTTP client. Chạy csrf trước, copy requestToken vào biến csrfToken.
+GET {{backend_HostAddress}}/api/auth/csrf
 Accept: application/json
+
+###
+
+POST {{backend_HostAddress}}/api/auth/login
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrfToken}}
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+###
+
+# Sau login, gọi lại csrf ở trên và cập nhật biến csrfToken.
+GET {{backend_HostAddress}}/api/me/profile
+Accept: application/json
+
+###
+
+POST {{backend_HostAddress}}/api/auth/logout
+X-CSRF-TOKEN: {{csrfToken}}
 
 ###
 
@@ -17,6 +43,7 @@ Accept: application/json
 
 POST {{backend_HostAddress}}/api/specialties
 Content-Type: application/json
+X-CSRF-TOKEN: {{csrfToken}}
 
 {
   "name": "Cardiology",
@@ -28,6 +55,7 @@ Content-Type: application/json
 
 PUT {{backend_HostAddress}}/api/specialties/1
 Content-Type: application/json
+X-CSRF-TOKEN: {{csrfToken}}
 
 {
   "name": "Dental",
@@ -39,5 +67,6 @@ Content-Type: application/json
 
 DELETE {{backend_HostAddress}}/api/specialties/1
 Accept: application/json
+X-CSRF-TOKEN: {{csrfToken}}
 
 ###

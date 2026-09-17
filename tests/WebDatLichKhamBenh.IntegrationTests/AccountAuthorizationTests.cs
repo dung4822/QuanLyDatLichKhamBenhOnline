@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -29,11 +28,10 @@ public class AccountAuthorizationTests(AppointmentApiFixture fixture) : IClassFi
 
     private async Task<HttpClient> LoginAsync(string email, string password = Password)
     {
-        var client = fixture.CreateClient();
+        var client = await fixture.CreateClientWithCsrfAsync();
         var response = await client.PostAsJsonAsync("/api/auth/login", new { email, password });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var login = (await response.Content.ReadFromJsonAsync<LoginResponse>(Json))!;
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
+        await AppointmentApiFixture.RefreshCsrfTokenAsync(client);
         return client;
     }
 
@@ -61,7 +59,7 @@ public class AccountAuthorizationTests(AppointmentApiFixture fixture) : IClassFi
     public async Task Registration_creates_new_patient_and_cannot_choose_role_or_claim_existing_profile()
     {
         var s = await fixture.SeedAsync();
-        using var anonymous = fixture.CreateClient();
+        using var anonymous = await fixture.CreateClientWithCsrfAsync();
         var email = Guid.NewGuid().ToString("N") + "@example.test";
         var response = await anonymous.PostAsJsonAsync("/api/auth/register", new
         {
@@ -81,8 +79,7 @@ public class AccountAuthorizationTests(AppointmentApiFixture fixture) : IClassFi
         var persisted = await db.UserAccounts.FindAsync(account.UserAccountId);
         Assert.NotEqual(Password, persisted!.PasswordHash);
         Assert.DoesNotContain("passwordHash", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
-        var token = client.DefaultRequestHeaders.Authorization!.Parameter!;
-        Assert.DoesNotContain(await db.UserSessions.ToListAsync(), x => x.TokenHash == token);
+        Assert.True(await db.UserSessions.AnyAsync(x => x.UserAccountId == account.UserAccountId));
         var duplicate = await anonymous.PostAsJsonAsync("/api/auth/register", new
         {
             email = email.ToUpperInvariant(), password = Password,
@@ -244,7 +241,7 @@ public class AccountAuthorizationTests(AppointmentApiFixture fixture) : IClassFi
         Assert.Equal(HttpStatusCode.OK, (await fixture.Client.PutAsJsonAsync($"/api/accounts/{account.UserAccountId}/access",
             new { role = "Patient", patientId = s.PatientId, isActive = false })).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await disabled.GetAsync("/api/me/profile")).StatusCode);
-        using var anonymous = fixture.CreateClient();
+        using var anonymous = await fixture.CreateClientWithCsrfAsync();
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/api/auth/login", new { email = account.Email, password = newPassword })).StatusCode);
     }
 
@@ -274,7 +271,7 @@ public class AccountAuthorizationTests(AppointmentApiFixture fixture) : IClassFi
             new { role = "Admin", isActive = false })).StatusCode);
         var (client, account) = await CreateLinkedAsync(AccountRole.Receptionist);
         using var staffClient = client;
-        using var anonymous = fixture.CreateClient();
+        using var anonymous = await fixture.CreateClientWithCsrfAsync();
         for (var i = 0; i < 5; i++)
             Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/api/auth/login", new { email = account.Email, password = "wrong" })).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/api/auth/login", new { email = account.Email, password = Password })).StatusCode);

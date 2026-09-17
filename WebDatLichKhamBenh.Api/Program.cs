@@ -1,11 +1,9 @@
 using WebDatLichKhamBenh.Application;
 using WebDatLichKhamBenh.Infrastructure;
-using FluentValidation;
 using System.Text.Json.Serialization;
 using WebDatLichKhamBenh.Api.Services;
 using WebDatLichKhamBenh.Api.Middlewares;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authorization;
+using WebDatLichKhamBenh.Api.Extensions;
 using System.Threading.RateLimiting;
 using Microsoft.OpenApi.Models;
 using WebDatLichKhamBenh.Api.Security;
@@ -15,7 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 const string AllowFrontendDevPolicy = "AllowFrontendDev";
 
-builder.Services.AddControllers()
+builder.Services.AddControllers(options => options.Filters.Add<CsrfValidationFilter>())
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
@@ -24,25 +22,20 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    options.AddSecurityDefinition("CSRF", new OpenApiSecurityScheme
     {
-        Type = SecuritySchemeType.Http, Scheme = "bearer",
-        Description = "Dán accessToken nhận từ POST /api/auth/login. Token là opaque bearer token, không phải JWT."
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Name = "X-CSRF-TOKEN",
+        Description = "Gọi GET /api/auth/csrf và dán requestToken vào đây trước khi POST/PUT/PATCH/DELETE. " +
+            "Sau đăng nhập/đăng xuất, lấy token mới. Cookie đăng nhập do trình duyệt tự gửi; dùng HTTPS."
     });
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
-        [new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } }] = Array.Empty<string>()
+        [new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "CSRF" } }] = Array.Empty<string>()
     });
 });
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentUser, CurrentUser>();
-builder.Services.AddAuthentication(SessionAuthenticationHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthenticationHandler.SchemeName, _ => { });
-builder.Services.AddAuthorization(options =>
-{
-    // Endpoint mới mặc định chỉ Admin; public và các vai trò khác phải khai báo rõ.
-    options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireRole("Admin").Build();
-});
+builder.Services.AddClinicAuthentication();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -64,7 +57,8 @@ builder.Services.AddCors(options =>
                 "http://localhost:5173",
                 "https://localhost:5173")
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 builder.Services.AddApplication();

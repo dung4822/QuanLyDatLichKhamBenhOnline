@@ -8,7 +8,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using WebDatLichKhamBenh.Application.DTOs.Accounts;
 using WebDatLichKhamBenh.Api.Services;
@@ -59,17 +58,36 @@ public sealed class AppointmentApiFixture : IAsyncLifetime
                 services.Remove(worker);
             });
         });
-        Client = CreateClient();
+        Client = await CreateClientWithCsrfAsync();
         using (var scope = Services.CreateScope())
             await scope.ServiceProvider.GetRequiredService<IAccountService>().BootstrapAdminAsync("admin@example.test", "Test-admin-password-2026!");
         var login = await Client.PostAsJsonAsync("/api/auth/login", new LoginRequest { Email = "admin@example.test", Password = "Test-admin-password-2026!" });
         login.EnsureSuccessStatusCode();
-        var result = await login.Content.ReadFromJsonAsync<LoginResponse>(new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)
-        { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } });
-        Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", result!.AccessToken);
+        await RefreshCsrfTokenAsync(Client);
     }
 
-    public HttpClient CreateClient() => _factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+    public HttpClient CreateClient(bool handleCookies = true) => _factory.CreateClient(new WebApplicationFactoryClientOptions
+    {
+        BaseAddress = new Uri("https://localhost"),
+        AllowAutoRedirect = false,
+        HandleCookies = handleCookies
+    });
+
+    public async Task<HttpClient> CreateClientWithCsrfAsync()
+    {
+        var client = CreateClient();
+        await RefreshCsrfTokenAsync(client);
+        return client;
+    }
+
+    public static async Task RefreshCsrfTokenAsync(HttpClient client)
+    {
+        var tokens = await client.GetFromJsonAsync<CsrfTokenResponse>("/api/auth/csrf");
+        client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", tokens!.RequestToken);
+    }
+
+    private record CsrfTokenResponse(string RequestToken);
 
     public AppDbContext CreateDbContext() => new(new DbContextOptionsBuilder<AppDbContext>()
         .UseNpgsql(ConnectionString).Options);
