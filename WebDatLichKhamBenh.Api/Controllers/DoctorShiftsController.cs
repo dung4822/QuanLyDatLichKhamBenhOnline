@@ -1,7 +1,5 @@
-using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using WebDatLichKhamBenh.Application.DTOs.DoctorShifts;
-using WebDatLichKhamBenh.Application.Exceptions;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 
 namespace WebDatLichKhamBenh.Api.Controllers;
@@ -24,9 +22,7 @@ public class DoctorShiftsController : ControllerBase
     public async Task<IActionResult> GetWeeklySchedule(int doctorId)
     {
         var doctorShifts = await _doctorShiftService.GetWeeklyScheduleAsync(doctorId);
-        return doctorShifts is null
-            ? NotFound(new { message = $"Doctor with ID {doctorId} does not exist." })
-            : Ok(doctorShifts);
+        return doctorShifts is null ? NotFound() : Ok(doctorShifts);
     }
 
     /// <summary>
@@ -34,43 +30,9 @@ public class DoctorShiftsController : ControllerBase
     /// Ca mới được tick sẽ thêm; ca bị bỏ tick sẽ xóa mềm.
     /// </summary>
     [HttpPut]
-    public async Task<IActionResult> ReplaceWeeklySchedule(
-        int doctorId,
-        [FromBody] ReplaceDoctorShiftsRequest request)
+    public async Task<IActionResult> ReplaceWeeklySchedule(int doctorId, [FromBody] ReplaceDoctorShiftsRequest request)
     {
-        try
-        {
-            var doctorShifts = await _doctorShiftService.ReplaceWeeklyScheduleAsync(doctorId, request);
-
-            return doctorShifts is null
-                ? NotFound(new { message = $"Doctor with ID {doctorId} does not exist." })
-                : Ok(doctorShifts);
-        }
-        catch (ValidationException exception)
-        {
-            return CreateValidationProblem(exception);
-        }
-        catch (DataPersistenceException)
-        {
-            return CreateDatabaseProblem();
-        }
-    }
-
-    private IActionResult CreateValidationProblem(ValidationException exception)
-    {
-        foreach (var error in exception.Errors)
-        {
-            ModelState.AddModelError(error.PropertyName, error.ErrorMessage);
-        }
-
-        return ValidationProblem(ModelState);
-    }
-
-    private IActionResult CreateDatabaseProblem()
-    {
-        return Problem(
-            statusCode: StatusCodes.Status500InternalServerError,
-            title: "Không thể cập nhật lịch làm việc tuần của bác sĩ.",
-            detail: "Database không lưu được thay đổi.");
+        var doctorShifts = await _doctorShiftService.ReplaceWeeklyScheduleAsync(doctorId, request);
+        return doctorShifts is null ? NotFound() : Ok(doctorShifts);
     }
 }

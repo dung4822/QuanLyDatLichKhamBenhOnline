@@ -1,10 +1,10 @@
 using FluentValidation;
 using WebDatLichKhamBenh.Application.DTOs.Accounts;
 using WebDatLichKhamBenh.Application.Exceptions;
+using WebDatLichKhamBenh.Application.Extensions;
 using WebDatLichKhamBenh.Application.Interfaces.Repositories;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 using WebDatLichKhamBenh.Application.Mappings;
-using WebDatLichKhamBenh.Application.Validators;
 using WebDatLichKhamBenh.Domain.Entities;
 using WebDatLichKhamBenh.Domain.Enums;
 
@@ -22,10 +22,14 @@ public class AuthService : IAuthService
     private readonly IPasswordService _passwords;
     private readonly ICurrentUser _currentUser;
     private readonly IClinicScheduleTransaction _transaction;
+    private readonly IValidator<RegisterRequest> _registerValidator;
+    private readonly IValidator<LoginRequest> _loginValidator;
+    private readonly IValidator<ChangePasswordRequest> _changePasswordValidator;
 
     public AuthService(IAccountRepository accounts, IPatientRepository patients,
         IDoctorRepository doctors, IPasswordService passwords, ICurrentUser currentUser,
-        IClinicScheduleTransaction transaction)
+        IClinicScheduleTransaction transaction, IValidator<RegisterRequest> registerValidator,
+        IValidator<LoginRequest> loginValidator, IValidator<ChangePasswordRequest> changePasswordValidator)
     {
         _accounts = accounts;
         _patients = patients;
@@ -33,16 +37,19 @@ public class AuthService : IAuthService
         _passwords = passwords;
         _currentUser = currentUser;
         _transaction = transaction;
+        _registerValidator = registerValidator;
+        _loginValidator = loginValidator;
+        _changePasswordValidator = changePasswordValidator;
     }
 
     public async Task<AccountDto> RegisterAsync(RegisterRequest request)
     {
-        await new RegisterValidator().ValidateAndThrowAsync(request);
+        await _registerValidator.ValidateAndThrowAsync(request);
 
         var account = new UserAccount
         {
             Email = request.Email.Trim(),
-            NormalizedEmail = request.Email.Trim().ToUpperInvariant(),
+            NormalizedEmail = request.Email.ToNormalizedEmail(),
             DisplayName = request.Profile.FullName.Trim(),
             Role = AccountRole.Patient
         };
@@ -60,7 +67,7 @@ public class AuthService : IAuthService
                 DateOfBirth = request.Profile.DateOfBirth,
                 Gender = request.Profile.Gender,
                 PhoneNumber = request.Profile.PhoneNumber.Trim(),
-                Email = string.IsNullOrWhiteSpace(request.Profile.Email) ? null : request.Profile.Email.Trim(),
+                Email = request.Profile.Email.TrimToNull(),
                 Address = request.Profile.Address?.Trim(),
                 CreatedAt = DateTime.UtcNow
             };
@@ -73,12 +80,12 @@ public class AuthService : IAuthService
 
     public async Task<AuthSessionDto> LoginAsync(LoginRequest request)
     {
-        await new LoginValidator().ValidateAndThrowAsync(request);
+        await _loginValidator.ValidateAndThrowAsync(request);
 
         // Trả null bên trong transaction để COMMIT bộ đếm sai mật khẩu trước khi trả 401.
         var result = await _transaction.ExecuteAsync<AuthSessionDto?>(async () =>
         {
-            var normalizedEmail = request.Email.Trim().ToUpperInvariant();
+            var normalizedEmail = request.Email.ToNormalizedEmail();
             var account = await _accounts.GetByEmailAsync(normalizedEmail);
             var now = DateTime.UtcNow;
 
@@ -141,7 +148,7 @@ public class AuthService : IAuthService
 
     public async Task ChangePasswordAsync(ChangePasswordRequest request)
     {
-        await new ChangePasswordValidator().ValidateAndThrowAsync(request);
+        await _changePasswordValidator.ValidateAndThrowAsync(request);
 
         await _transaction.ExecuteAsync(async () =>
         {

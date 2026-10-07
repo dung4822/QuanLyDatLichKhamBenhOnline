@@ -1,7 +1,7 @@
 using FluentValidation;
-using FluentValidation.Results;
 using WebDatLichKhamBenh.Application.DTOs.NonWorkingDays;
 using WebDatLichKhamBenh.Application.Exceptions;
+using WebDatLichKhamBenh.Application.Extensions;
 using WebDatLichKhamBenh.Application.Interfaces.Repositories;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 using WebDatLichKhamBenh.Application.Time;
@@ -9,32 +9,34 @@ using WebDatLichKhamBenh.Domain.Entities;
 
 namespace WebDatLichKhamBenh.Application.Services;
 
+// Ngày nghỉ của một bác sĩ (DoctorId có giá trị) hoặc của cả bệnh viện (DoctorId = null).
+// Mỗi lần thêm/sửa/xóa đều phải đồng bộ lại khung giờ của ngày bị ảnh hưởng.
 public class NonWorkingDayService : INonWorkingDayService
 {
-    private readonly IClinicScheduleTransaction _transaction;
-    private readonly IAppointmentRepository _appointments;
     private readonly INonWorkingDayRepository _nonWorkingDayRepository;
     private readonly IDoctorRepository _doctorRepository;
+    private readonly IAppointmentRepository _appointments;
+    private readonly IAppointmentSlotService _appointmentSlotService;
+    private readonly IClinicScheduleTransaction _transaction;
     private readonly IValidator<CreateNonWorkingDayRequest> _createValidator;
     private readonly IValidator<UpdateNonWorkingDayRequest> _updateValidator;
-    private readonly IAppointmentSlotService _appointmentSlotService;
 
     public NonWorkingDayService(
-        IClinicScheduleTransaction transaction,
-        IAppointmentRepository appointments,
         INonWorkingDayRepository nonWorkingDayRepository,
         IDoctorRepository doctorRepository,
+        IAppointmentRepository appointments,
+        IAppointmentSlotService appointmentSlotService,
+        IClinicScheduleTransaction transaction,
         IValidator<CreateNonWorkingDayRequest> createValidator,
-        IValidator<UpdateNonWorkingDayRequest> updateValidator,
-        IAppointmentSlotService appointmentSlotService)
+        IValidator<UpdateNonWorkingDayRequest> updateValidator)
     {
-        _transaction = transaction;
-        _appointments = appointments;
         _nonWorkingDayRepository = nonWorkingDayRepository;
         _doctorRepository = doctorRepository;
+        _appointments = appointments;
+        _appointmentSlotService = appointmentSlotService;
+        _transaction = transaction;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
-        _appointmentSlotService = appointmentSlotService;
     }
 
     public async Task<List<NonWorkingDayDto>> GetAllAsync(DateOnly? fromDate)
@@ -49,187 +51,116 @@ public class NonWorkingDayService : INonWorkingDayService
         return nonWorkingDay is null ? null : MapToDto(nonWorkingDay);
     }
 
-    public Task<NonWorkingDayDto> CreateAsync(CreateNonWorkingDayRequest request)
-        => _transaction.ExecuteAsync(() => CreateCoreAsync(request));
-
-    private async Task<NonWorkingDayDto> CreateCoreAsync(CreateNonWorkingDayRequest createNonWorkingDayRequest)
+    public async Task<NonWorkingDayDto> CreateAsync(CreateNonWorkingDayRequest request)
     {
-        await _createValidator.ValidateAndThrowAsync(createNonWorkingDayRequest);
-        await EnsureDoctorExistsAsync(createNonWorkingDayRequest.DoctorId);
-        await EnsureNoDuplicateAsync(createNonWorkingDayRequest.Date, createNonWorkingDayRequest.DoctorId);
-        await EnsureNoAppointmentsAsync(createNonWorkingDayRequest.Date, createNonWorkingDayRequest.DoctorId);
+        await _createValidator.ValidateAndThrowAsync(request);
 
-        var nonWorkingDay = new NonWorkingDay
+        return await _transaction.ExecuteAsync(async () =>
         {
-            Date = createNonWorkingDayRequest.Date,
-            DoctorId = createNonWorkingDayRequest.DoctorId,
-            Reason = NormalizeReason(createNonWorkingDayRequest.Reason),
-            CreatedAt = DateTime.UtcNow
-        };
+            await EnsureCanUseDateAsync(request.Date, request.DoctorId);
 
-        try
-        {
+            var nonWorkingDay = new NonWorkingDay
+            {
+                Date = request.Date,
+                DoctorId = request.DoctorId,
+                Reason = request.Reason.TrimToNull(),
+                CreatedAt = DateTime.UtcNow
+            };
             await _nonWorkingDayRepository.AddAsync(nonWorkingDay);
             await _nonWorkingDayRepository.SaveChangesAsync();
-            await _appointmentSlotService.SyncRangeAsync(
-                nonWorkingDay.Date,
-                nonWorkingDay.Date,
-                nonWorkingDay.DoctorId);
-        }
-        catch (Exception exception)
-        {
-            throw new DataPersistenceException("Không thể lưu lịch nghỉ vào database.", exception);
-        }
 
-        return await GetSavedNonWorkingDayAsync(nonWorkingDay.NonWorkingDayId);
+            await _appointmentSlotService.SyncRangeAsync(nonWorkingDay.Date, nonWorkingDay.Date, nonWorkingDay.DoctorId);
+            return await GetSavedAsync(nonWorkingDay.NonWorkingDayId);
+        });
     }
 
-    public Task<NonWorkingDayDto?> UpdateAsync(int id, UpdateNonWorkingDayRequest request)
-        => _transaction.ExecuteAsync(() => UpdateCoreAsync(id, request));
-
-    private async Task<NonWorkingDayDto?> UpdateCoreAsync(
-        int nonWorkingDayId,
-        UpdateNonWorkingDayRequest updateNonWorkingDayRequest)
+    public async Task<NonWorkingDayDto?> UpdateAsync(int nonWorkingDayId, UpdateNonWorkingDayRequest request)
     {
-        await _updateValidator.ValidateAndThrowAsync(updateNonWorkingDayRequest);
+        await _updateValidator.ValidateAndThrowAsync(request);
 
-        var nonWorkingDay = await _nonWorkingDayRepository.GetByIdTrackingAsync(nonWorkingDayId);
-        if (nonWorkingDay is null)
+        return await _transaction.ExecuteAsync(async () =>
         {
-            return null;
-        }
+            var nonWorkingDay = await _nonWorkingDayRepository.GetByIdTrackingAsync(nonWorkingDayId);
+            if (nonWorkingDay is null)
+                return null;
 
-        EnsureStillFuture(nonWorkingDay.Date);
-        var oldDate = nonWorkingDay.Date;
-        var oldDoctorId = nonWorkingDay.DoctorId;
-        await EnsureDoctorExistsAsync(updateNonWorkingDayRequest.DoctorId);
-        await EnsureNoDuplicateAsync(
-            updateNonWorkingDayRequest.Date,
-            updateNonWorkingDayRequest.DoctorId,
-            nonWorkingDayId);
+            EnsureStillFuture(nonWorkingDay.Date);
+            await EnsureCanUseDateAsync(request.Date, request.DoctorId, nonWorkingDayId);
 
-        await EnsureNoAppointmentsAsync(updateNonWorkingDayRequest.Date, updateNonWorkingDayRequest.DoctorId);
-        nonWorkingDay.Date = updateNonWorkingDayRequest.Date;
-        nonWorkingDay.DoctorId = updateNonWorkingDayRequest.DoctorId;
-        nonWorkingDay.Reason = NormalizeReason(updateNonWorkingDayRequest.Reason);
-        nonWorkingDay.UpdatedAt = DateTime.UtcNow;
+            // Nhớ ngày cũ: khung giờ của ngày cũ phải được mở lại, ngày mới phải được khóa.
+            var oldDate = nonWorkingDay.Date;
+            var oldDoctorId = nonWorkingDay.DoctorId;
 
-        await SaveChangesAsync("Không thể cập nhật lịch nghỉ trong database.");
-        await _appointmentSlotService.SyncRangeAsync(oldDate, oldDate, oldDoctorId);
-        await _appointmentSlotService.SyncRangeAsync(nonWorkingDay.Date, nonWorkingDay.Date, nonWorkingDay.DoctorId);
-        return await GetSavedNonWorkingDayAsync(nonWorkingDayId);
+            nonWorkingDay.Date = request.Date;
+            nonWorkingDay.DoctorId = request.DoctorId;
+            nonWorkingDay.Reason = request.Reason.TrimToNull();
+            nonWorkingDay.UpdatedAt = DateTime.UtcNow;
+            await _nonWorkingDayRepository.SaveChangesAsync();
+
+            await _appointmentSlotService.SyncRangeAsync(oldDate, oldDate, oldDoctorId);
+            await _appointmentSlotService.SyncRangeAsync(nonWorkingDay.Date, nonWorkingDay.Date, nonWorkingDay.DoctorId);
+            return await GetSavedAsync(nonWorkingDayId);
+        });
     }
 
     public Task<bool> DeleteAsync(int nonWorkingDayId)
-        => _transaction.ExecuteAsync(() => DeleteCoreAsync(nonWorkingDayId));
-
-    private async Task<bool> DeleteCoreAsync(int nonWorkingDayId)
-    {
-        var nonWorkingDay = await _nonWorkingDayRepository.GetByIdTrackingAsync(nonWorkingDayId);
-        if (nonWorkingDay is null)
+        => _transaction.ExecuteAsync(async () =>
         {
-            return false;
-        }
+            var nonWorkingDay = await _nonWorkingDayRepository.GetByIdTrackingAsync(nonWorkingDayId);
+            if (nonWorkingDay is null)
+                return false;
 
-        EnsureStillFuture(nonWorkingDay.Date);
-        var affectedDate = nonWorkingDay.Date;
-        var affectedDoctorId = nonWorkingDay.DoctorId;
+            EnsureStillFuture(nonWorkingDay.Date);
 
-        var deletedAt = DateTime.UtcNow;
-        nonWorkingDay.IsDeleted = true;
-        nonWorkingDay.DeletedAt = deletedAt;
-        nonWorkingDay.UpdatedAt = deletedAt;
+            var deletedAt = DateTime.UtcNow;
+            nonWorkingDay.IsDeleted = true;
+            nonWorkingDay.DeletedAt = deletedAt;
+            nonWorkingDay.UpdatedAt = deletedAt;
+            await _nonWorkingDayRepository.SaveChangesAsync();
 
-        await SaveChangesAsync("Không thể xóa mềm lịch nghỉ trong database.");
-        await _appointmentSlotService.SyncRangeAsync(affectedDate, affectedDate, affectedDoctorId);
-        return true;
-    }
+            await _appointmentSlotService.SyncRangeAsync(nonWorkingDay.Date, nonWorkingDay.Date, nonWorkingDay.DoctorId);
+            return true;
+        });
 
     public Task<bool> IsDoctorUnavailableAsync(int doctorId, DateOnly date)
-    {
-        return _nonWorkingDayRepository.IsDoctorUnavailableAsync(doctorId, date);
-    }
+        => _nonWorkingDayRepository.IsDoctorUnavailableAsync(doctorId, date);
 
-    private async Task EnsureNoAppointmentsAsync(DateOnly date, int? doctorId)
+    // Ba điều kiện để đặt một ngày nghỉ: bác sĩ tồn tại, chưa có ngày nghỉ trùng, không có lịch hẹn bị ảnh hưởng.
+    private async Task EnsureCanUseDateAsync(DateOnly date, int? doctorId, int? excludedNonWorkingDayId = null)
     {
-        if (await _appointments.HasUpcomingConfirmedAsync(ClinicClock.Now, doctorId: doctorId, date: date))
-            throw new AppointmentConflictException("Ngày nghỉ ảnh hưởng lịch hẹn đã xác nhận. Hãy xử lý lịch hẹn trước.");
-    }
+        if (doctorId.HasValue && await _doctorRepository.GetDoctorByIdAsync(doctorId.Value) is null)
+            throw ValidationErrors.For(nameof(CreateNonWorkingDayRequest.DoctorId), "Bác sĩ không tồn tại hoặc đã bị xóa.");
 
-    private async Task EnsureDoctorExistsAsync(int? doctorId)
-    {
-        if (!doctorId.HasValue)
-        {
-            return;
-        }
-
-        var doctor = await _doctorRepository.GetDoctorByIdTrackingAsync(doctorId.Value);
-        if (doctor is null)
-        {
-            throw CreateValidationException(nameof(CreateNonWorkingDayRequest.DoctorId), "Bác sĩ không tồn tại hoặc đã bị xóa.");
-        }
-    }
-
-    private async Task EnsureNoDuplicateAsync(DateOnly date, int? doctorId, int? excludedNonWorkingDayId = null)
-    {
-        var hasDuplicate = await _nonWorkingDayRepository.ExistsAsync(date, doctorId, excludedNonWorkingDayId);
-        if (hasDuplicate)
+        if (await _nonWorkingDayRepository.ExistsAsync(date, doctorId, excludedNonWorkingDayId))
         {
             var scope = doctorId.HasValue ? "bác sĩ này" : "cả bệnh viện";
-            throw CreateValidationException(nameof(CreateNonWorkingDayRequest.Date), $"Đã có lịch nghỉ cho {scope} vào ngày này.");
+            throw ValidationErrors.For(nameof(CreateNonWorkingDayRequest.Date), $"Đã có lịch nghỉ cho {scope} vào ngày này.");
         }
+
+        if (await _appointments.HasUpcomingConfirmedAsync(ClinicClock.Now, doctorId: doctorId, date: date))
+            throw new AppointmentConflictException("Ngày nghỉ ảnh hưởng lịch hẹn đã xác nhận. Hãy xử lý lịch hẹn trước.");
     }
 
     private static void EnsureStillFuture(DateOnly date)
     {
         if (date <= ClinicClock.Today)
-        {
-            throw CreateValidationException(nameof(CreateNonWorkingDayRequest.Date), "Chỉ có thể sửa hoặc hủy lịch nghỉ của ngày trong tương lai.");
-        }
+            throw ValidationErrors.For(nameof(CreateNonWorkingDayRequest.Date),
+                "Chỉ có thể sửa hoặc hủy lịch nghỉ của ngày trong tương lai.");
     }
 
-    private async Task<NonWorkingDayDto> GetSavedNonWorkingDayAsync(int nonWorkingDayId)
-    {
-        return await GetByIdAsync(nonWorkingDayId)
+    // Đọc lại sau khi lưu để có DoctorFullName (navigation property) trong kết quả trả về.
+    private async Task<NonWorkingDayDto> GetSavedAsync(int nonWorkingDayId)
+        => await GetByIdAsync(nonWorkingDayId)
             ?? throw new InvalidOperationException("Không thể đọc lịch nghỉ vừa được lưu.");
-    }
 
-    private async Task SaveChangesAsync(string errorMessage)
+    private static NonWorkingDayDto MapToDto(NonWorkingDay nonWorkingDay) => new()
     {
-        try
-        {
-            await _nonWorkingDayRepository.SaveChangesAsync();
-        }
-        catch (Exception exception)
-        {
-            throw new DataPersistenceException(errorMessage, exception);
-        }
-    }
-
-    private static string? NormalizeReason(string? reason)
-    {
-        return string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
-    }
-
-    private static NonWorkingDayDto MapToDto(NonWorkingDay nonWorkingDay)
-    {
-        return new NonWorkingDayDto
-        {
-            NonWorkingDayId = nonWorkingDay.NonWorkingDayId,
-            Date = nonWorkingDay.Date,
-            DoctorId = nonWorkingDay.DoctorId,
-            DoctorFullName = nonWorkingDay.Doctor?.FullName,
-            Reason = nonWorkingDay.Reason,
-            CreatedAt = nonWorkingDay.CreatedAt,
-            UpdatedAt = nonWorkingDay.UpdatedAt
-        };
-    }
-
-    private static ValidationException CreateValidationException(string propertyName, string errorMessage)
-    {
-        return new ValidationException(new[]
-        {
-            new ValidationFailure(propertyName, errorMessage)
-        });
-    }
+        NonWorkingDayId = nonWorkingDay.NonWorkingDayId,
+        Date = nonWorkingDay.Date,
+        DoctorId = nonWorkingDay.DoctorId,
+        DoctorFullName = nonWorkingDay.Doctor?.FullName,
+        Reason = nonWorkingDay.Reason,
+        CreatedAt = nonWorkingDay.CreatedAt,
+        UpdatedAt = nonWorkingDay.UpdatedAt
+    };
 }

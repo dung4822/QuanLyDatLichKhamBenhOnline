@@ -6,6 +6,7 @@ using WebDatLichKhamBenh.Application.Interfaces.Services;
 using WebDatLichKhamBenh.Infrastructure.Persistence;
 using WebDatLichKhamBenh.Infrastructure.Repositories;
 using WebDatLichKhamBenh.Infrastructure.Storage;
+using WebDatLichKhamBenh.Infrastructure.AI;
 
 namespace WebDatLichKhamBenh.Infrastructure;
 
@@ -37,6 +38,14 @@ public static class DependencyInjection
             ApiSecret = configuration[$"{CloudinarySettings.SectionName}:ApiSecret"] ?? string.Empty
         });
         services.AddSingleton<IImageStorageService, CloudinaryImageStorageService>();
+        services.AddSingleton(new DeepSeekSettings
+        {
+            ApiKey = configuration["DeepSeek:ApiKey"] ?? string.Empty,
+            Model = configuration["DeepSeek:Model"] ?? "deepseek-flash",
+            MaxOutputTokens = configuration.GetValue<int?>("DeepSeek:MaxOutputTokens") ?? 1024
+        });
+        // Thời gian chờ tổng (60 giây) do ChatService quản lý.
+        services.AddHttpClient<ILlmClient, DeepSeekClient>();
 
         return services;
     }

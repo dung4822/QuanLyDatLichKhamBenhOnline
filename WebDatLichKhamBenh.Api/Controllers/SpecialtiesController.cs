@@ -1,12 +1,12 @@
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using WebDatLichKhamBenh.Application.DTOs.Specialties;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 
 namespace WebDatLichKhamBenh.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/specialties")]
 public class SpecialtiesController : ControllerBase
 {
     private readonly ISpecialtyService _specialtyService;
@@ -19,56 +19,31 @@ public class SpecialtiesController : ControllerBase
     [HttpGet]
     [AllowAnonymous]
     public async Task<IActionResult> GetAll()
-    {
-        var specialties = await _specialtyService.GetAllAsync();
-        return Ok(specialties);
-    }
+        => Ok(await _specialtyService.GetAllAsync());
 
-  /*  [HttpGet("{id}")]*/
-#if false
-    public async Task<IActionResult> GetById(int id)
-    {
-        var specialty = await _specialtyService.GetByIdAsync(id);
-        return specialty == null ? NotFound() : Ok(specialty);
-    }
-#endif
-    [HttpGet("{id}")]
+    [HttpGet("{id:int}")]
     [AllowAnonymous]
     public async Task<IActionResult> GetById(int id)
     {
         var specialty = await _specialtyService.GetByIdAsync(id);
-        return specialty == null ? NotFound() : Ok(specialty);
+        return specialty is null ? NotFound() : Ok(specialty);
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateSpecialtyRequest createSpecialtyRequest)
+    public async Task<IActionResult> Create([FromBody] CreateSpecialtyRequest request)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
-        var createdSpecialty = await _specialtyService.CreateAsync(createSpecialtyRequest);
-        return CreatedAtAction(nameof(GetById), new { id = createdSpecialty.SpecialtyId }, createdSpecialty);
+        var specialty = await _specialtyService.CreateAsync(request);
+        return CreatedAtAction(nameof(GetById), new { id = specialty.SpecialtyId }, specialty);
     }
 
-    [HttpPut("{id}")]
-
-    public async Task<IActionResult> Update(int id, [FromBody] UpdateSpecialtyRequest updateSpecialtyRequest)
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateSpecialtyRequest request)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
-        var updatedSpecialty = await _specialtyService.UpdateAsync(id, updateSpecialtyRequest);
-        return updatedSpecialty == null ? NotFound() : Ok(updatedSpecialty);
+        var specialty = await _specialtyService.UpdateAsync(id, request);
+        return specialty is null ? NotFound() : Ok(specialty);
     }
 
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
-    {
-        var deleted = await _specialtyService.DeleteAsync(id);
-        return deleted ? NoContent() : NotFound();
-    }
+        => await _specialtyService.DeleteAsync(id) ? NoContent() : NotFound();
 }

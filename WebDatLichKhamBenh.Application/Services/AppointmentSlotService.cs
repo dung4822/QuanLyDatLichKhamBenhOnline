@@ -1,6 +1,5 @@
-using FluentValidation;
-using FluentValidation.Results;
 using WebDatLichKhamBenh.Application.DTOs.AppointmentSlots;
+using WebDatLichKhamBenh.Application.Exceptions;
 using WebDatLichKhamBenh.Application.Interfaces.Repositories;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 using WebDatLichKhamBenh.Application.Time;
@@ -9,11 +8,14 @@ using WebDatLichKhamBenh.Domain.Enums;
 
 namespace WebDatLichKhamBenh.Application.Services;
 
+// Khung giờ khám (slot) được SINH RA từ lịch làm việc: ca (Shift) × bác sĩ được phân công (DoctorShift) × ngày.
+// Mỗi khi lịch làm việc hoặc ngày nghỉ thay đổi, gọi SyncRangeAsync để bảng AppointmentSlots khớp lại.
 public class AppointmentSlotService : IAppointmentSlotService
 {
+    private const string RemovedFromScheduleReason = "Không còn trong lịch làm việc.";
+    private const string OverlapsBookingReason = "Khoảng giờ chồng với lịch hẹn đã đặt.";
+
     private readonly IClinicScheduleTransaction _transaction;
-    private const int SlotMinutes = 30;
-    private const int RollingWindowDays = 7;
     private readonly IAppointmentSlotRepository _appointmentSlotRepository;
     private readonly IDoctorRepository _doctorRepository;
 
@@ -27,187 +29,139 @@ public class AppointmentSlotService : IAppointmentSlotService
         _doctorRepository = doctorRepository;
     }
 
-    public async Task<List<AppointmentSlotDto>?> GetAvailableSlotsAsync(
-        int doctorId,
-        DateOnly? fromDate,
-        DateOnly? toDate)
+    public async Task<List<AppointmentSlotDto>?> GetAvailableSlotsAsync(int doctorId, DateOnly? fromDate, DateOnly? toDate)
     {
         if (await _doctorRepository.GetDoctorByIdAsync(doctorId) is null)
-        {
             return null;
-        }
 
-        var (from, to) = GetValidatedReadRange(fromDate, toDate);
+        var today = ClinicClock.Today;
+        var lastDay = today.AddDays(ClinicSchedule.BookingWindowDays - 1);
+        var from = fromDate ?? today;
+        var to = toDate ?? lastDay;
+        if (from < today || to > lastDay || to < from)
+            throw ValidationErrors.For("dateRange", "Khoảng ngày phải nằm trong 7 ngày từ hôm nay theo giờ Việt Nam.");
+
+        // Repository đã lọc slot Available trong khoảng ngày; ở đây bỏ thêm các slot hôm nay đã qua giờ.
         var slots = await _appointmentSlotRepository.GetAvailableSlotsAsync(doctorId, from, to);
         var now = ClinicClock.Now;
-        var today = DateOnly.FromDateTime(now);
-        var currentTime = TimeOnly.FromDateTime(now);
-
         return slots
-            .Where(slot => slot.Date > today ||
-                           (slot.Date == today && slot.StartTime > currentTime))
+            .Where(slot => slot.Date.ToDateTime(slot.StartTime) > now)
             .Select(MapToDto)
             .ToList();
     }
 
+    // Đảm bảo luôn có slot cho 7 ngày tới. Gọi định kỳ (background service) và sau mỗi thay đổi lịch.
     public Task EnsureRollingWindowAsync(CancellationToken cancellationToken = default)
-    {
-        var today = ClinicClock.Today;
-        return SyncRangeAsync(today, today.AddDays(RollingWindowDays - 1), null, cancellationToken);
-    }
+        => SyncRangeAsync(ClinicClock.Today, ClinicSchedule.LastBookableDate, null, cancellationToken);
 
+    // Đồng bộ slot trong [fromDate, toDate] (chỉ phần nằm trong cửa sổ 7 ngày), cho một hoặc mọi bác sĩ.
+    // Slot đã Booked KHÔNG BAO GIỜ bị sửa, để không ảnh hưởng lịch hẹn của bệnh nhân.
     public Task SyncRangeAsync(DateOnly fromDate, DateOnly toDate, int? doctorId = null,
         CancellationToken cancellationToken = default)
-        => _transaction.ExecuteAsync(() => SyncRangeCoreAsync(fromDate, toDate, doctorId, cancellationToken), cancellationToken);
-
-    private async Task SyncRangeCoreAsync(
-        DateOnly fromDate,
-        DateOnly toDate,
-        int? doctorId = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (toDate < fromDate)
+        => _transaction.ExecuteAsync(async () =>
         {
-            throw new ArgumentException("Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.", nameof(toDate));
-        }
+            if (toDate < fromDate)
+                throw new ArgumentException("Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.", nameof(toDate));
 
-        var (from, to, hasWindow) = IntersectWithRollingWindow(fromDate, toDate);
-        if (!hasWindow)
-        {
-            return;
-        }
+            // Chỉ đồng bộ phần nằm trong cửa sổ đặt lịch [hôm nay, hôm nay + 6].
+            var today = ClinicClock.Today;
+            var lastDay = today.AddDays(ClinicSchedule.BookingWindowDays - 1);
+            var from = fromDate > today ? fromDate : today;
+            var to = toDate < lastDay ? toDate : lastDay;
+            if (from > to)
+                return;
 
-        cancellationToken.ThrowIfCancellationRequested();
-        // Các repository dùng chung một scoped DbContext. EF Core không hỗ trợ nhiều
-        // truy vấn song song trên cùng context, nên giữ ba truy vấn bulk này tuần tự.
-        var schedules = await _appointmentSlotRepository.GetActiveDoctorShiftsAsync(doctorId);
-        var nonWorkingDays = await _appointmentSlotRepository.GetNonWorkingDaysAsync(from, to);
-        var existingSlots = await _appointmentSlotRepository.GetSlotsTrackingAsync(from, to, doctorId);
-
-        var desiredSlots = BuildDesiredSlots(schedules, from, to);
-        var (hospitalReasons, doctorReasons) = BuildUnavailableReasons(nonWorkingDays);
-        var existingByKey = existingSlots.ToDictionary(slot => (slot.DoctorId, slot.Date, slot.StartTime));
-        var bookedSlots = existingSlots.Where(slot => slot.Status == AppointmentSlotStatus.Booked).ToList();
-        var createdSlots = new List<AppointmentSlot>();
-        var changedAt = DateTime.UtcNow;
-
-        var hasChanges = false;
-        foreach (var desiredSlot in desiredSlots.Values)
-        {
-            var key = (desiredSlot.DoctorId, desiredSlot.Date, desiredSlot.StartTime);
-            var unavailableReason = GetUnavailableReason(
-                hospitalReasons,
-                doctorReasons,
-                desiredSlot.DoctorId,
-                desiredSlot.Date);
-            if (unavailableReason is null && bookedSlots.Any(booked =>
-                booked.DoctorId == desiredSlot.DoctorId && booked.Date == desiredSlot.Date &&
-                booked.StartTime != desiredSlot.StartTime &&
-                booked.StartTime < desiredSlot.EndTime && desiredSlot.StartTime < booked.EndTime))
-                unavailableReason = "Khoảng giờ chồng với lịch hẹn đã đặt.";
-
-            if (!existingByKey.TryGetValue(key, out var existingSlot))
-            {
-                createdSlots.Add(new AppointmentSlot
-                {
-                    DoctorId = desiredSlot.DoctorId,
-                    DoctorShiftId = desiredSlot.DoctorShiftId,
-                    Date = desiredSlot.Date,
-                    StartTime = desiredSlot.StartTime,
-                    EndTime = desiredSlot.EndTime,
-                    Status = unavailableReason is null
-                        ? AppointmentSlotStatus.Available
-                        : AppointmentSlotStatus.Unavailable,
-                    UnavailableReason = unavailableReason,
-                    CreatedAt = changedAt
-                });
-                hasChanges = true;
-                continue;
-            }
-
-            if (existingSlot.Status == AppointmentSlotStatus.Booked)
-            {
-                continue;
-            }
-
-            if (existingSlot.DoctorShiftId != desiredSlot.DoctorShiftId || existingSlot.EndTime != desiredSlot.EndTime)
-            {
-                existingSlot.DoctorShiftId = desiredSlot.DoctorShiftId;
-                existingSlot.EndTime = desiredSlot.EndTime;
-                existingSlot.UpdatedAt = changedAt;
-                hasChanges = true;
-            }
-
-            hasChanges |= SetAvailability(existingSlot, unavailableReason, changedAt);
-        }
-
-        foreach (var existingSlot in existingSlots)
-        {
-            if (existingSlot.Status == AppointmentSlotStatus.Booked ||
-                desiredSlots.ContainsKey((existingSlot.DoctorId, existingSlot.Date, existingSlot.StartTime)))
-            {
-                continue;
-            }
-
-            hasChanges |= SetAvailability(existingSlot, "Không còn trong lịch làm việc.", changedAt);
-        }
-
-        if (createdSlots.Count > 0)
-        {
-            await _appointmentSlotRepository.AddRangeAsync(createdSlots);
-        }
-
-        if (hasChanges)
-        {
             cancellationToken.ThrowIfCancellationRequested();
-            await _appointmentSlotRepository.SaveChangesAsync();
-        }
-    }
+            // Các repository dùng chung một DbContext; EF Core không cho chạy song song nên query tuần tự.
+            var schedules = await _appointmentSlotRepository.GetActiveDoctorShiftsAsync(doctorId);
+            var nonWorkingDays = await _appointmentSlotRepository.GetNonWorkingDaysAsync(from, to);
+            var existingSlots = await _appointmentSlotRepository.GetSlotsTrackingAsync(from, to, doctorId);
 
-    private static Dictionary<(int DoctorId, DateOnly Date, TimeOnly StartTime), DesiredSlot> BuildDesiredSlots(
-        IEnumerable<DoctorShift> schedules,
-        DateOnly fromDate,
-        DateOnly toDate)
-    {
-        var desiredSlots = new Dictionary<(int, DateOnly, TimeOnly), DesiredSlot>();
-        var occupiedRanges = new Dictionary<(int DoctorId, DateOnly Date), List<DesiredSlot>>();
+            // Bước 1: từ lịch làm việc, tính ra các slot "nên có".
+            var desiredSlots = BuildDesiredSlots(schedules, from, to);
+            var existingByKey = existingSlots.ToDictionary(slot => (slot.DoctorId, slot.Date, slot.StartTime));
+            var bookedSlots = existingSlots.Where(slot => slot.Status == AppointmentSlotStatus.Booked).ToList();
+            var changedAt = DateTime.UtcNow;
+            var newSlots = new List<AppointmentSlot>();
+            var hasChanges = false;
 
-        foreach (var date in EnumerateDates(fromDate, toDate))
-        {
-            foreach (var schedule in schedules
-                         .Where(schedule => schedule.Shift.DayOfWeek == date.DayOfWeek)
-                         .OrderBy(schedule => schedule.DoctorId)
-                         .ThenBy(schedule => schedule.Shift.StartTime))
+            foreach (var desired in desiredSlots.Values)
             {
-                var durationMinutes = (schedule.Shift.EndTime - schedule.Shift.StartTime).TotalMinutes;
-                if (durationMinutes < SlotMinutes || durationMinutes % SlotMinutes != 0)
+                var unavailableReason = GetDayOffReason(nonWorkingDays, desired.DoctorId, desired.Date)
+                    ?? (OverlapsBooking(desired, bookedSlots) ? OverlapsBookingReason : null);
+
+                // Bước 2: slot nên có mà chưa có → tạo mới.
+                if (!existingByKey.TryGetValue((desired.DoctorId, desired.Date, desired.StartTime), out var existing))
                 {
+                    newSlots.Add(CreateSlot(desired, unavailableReason, changedAt));
                     continue;
                 }
 
-                var rangeKey = (schedule.DoctorId, date);
-                if (!occupiedRanges.TryGetValue(rangeKey, out var ranges))
+                // Bước 3: slot đã có (và chưa ai đặt) → cập nhật theo lịch mới.
+                if (existing.Status == AppointmentSlotStatus.Booked)
+                    continue;
+                hasChanges |= UpdateFromSchedule(existing, desired, changedAt);
+                hasChanges |= SetAvailability(existing, unavailableReason, changedAt);
+            }
+
+            // Bước 4: slot đang có nhưng không còn trong lịch làm việc → khóa lại (không xóa, để giữ lịch sử).
+            foreach (var existing in existingSlots)
+            {
+                if (existing.Status != AppointmentSlotStatus.Booked &&
+                    !desiredSlots.ContainsKey((existing.DoctorId, existing.Date, existing.StartTime)))
+                    hasChanges |= SetAvailability(existing, RemovedFromScheduleReason, changedAt);
+            }
+
+            if (newSlots.Count > 0)
+            {
+                await _appointmentSlotRepository.AddRangeAsync(newSlots);
+                hasChanges = true;
+            }
+
+            if (hasChanges)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await _appointmentSlotRepository.SaveChangesAsync();
+            }
+        }, cancellationToken);
+
+    // Cắt mỗi ca làm việc thành các slot 30 phút cho từng ngày trong khoảng.
+    private static Dictionary<(int DoctorId, DateOnly Date, TimeOnly StartTime), DesiredSlot> BuildDesiredSlots(
+        List<DoctorShift> schedules, DateOnly fromDate, DateOnly toDate)
+    {
+        var desiredSlots = new Dictionary<(int, DateOnly, TimeOnly), DesiredSlot>();
+        // Các slot đã lấy của từng bác sĩ trong từng ngày, để kiểm tra chồng giờ chỉ trong phạm vi nhỏ đó.
+        var takenByDoctorAndDate = new Dictionary<(int DoctorId, DateOnly Date), List<DesiredSlot>>();
+
+        for (var date = fromDate; date <= toDate; date = date.AddDays(1))
+        {
+            var schedulesOfDay = schedules
+                .Where(schedule => schedule.Shift.DayOfWeek == date.DayOfWeek)
+                .OrderBy(schedule => schedule.DoctorId)
+                .ThenBy(schedule => schedule.Shift.StartTime);
+
+            foreach (var schedule in schedulesOfDay)
+            {
+                if (!ClinicSchedule.IsValidShiftDuration(schedule.Shift.StartTime, schedule.Shift.EndTime))
+                    continue;
+
+                if (!takenByDoctorAndDate.TryGetValue((schedule.DoctorId, date), out var taken))
                 {
-                    ranges = [];
-                    occupiedRanges.Add(rangeKey, ranges);
+                    taken = [];
+                    takenByDoctorAndDate.Add((schedule.DoctorId, date), taken);
                 }
 
-                for (var start = schedule.Shift.StartTime; start < schedule.Shift.EndTime; start = start.AddMinutes(SlotMinutes))
+                for (var start = schedule.Shift.StartTime; start < schedule.Shift.EndTime;
+                     start = start.AddMinutes(ClinicSchedule.SlotMinutes))
                 {
-                    var candidate = new DesiredSlot(
-                        schedule.DoctorId,
-                        schedule.DoctorShiftId,
-                        date,
-                        start,
-                        start.AddMinutes(SlotMinutes));
+                    var candidate = new DesiredSlot(schedule.DoctorId, schedule.DoctorShiftId, date,
+                        start, start.AddMinutes(ClinicSchedule.SlotMinutes));
 
-                    // Dữ liệu legacy có thể có ca chồng nhau. Không tạo slot trùng giờ dù cấu hình đó tồn tại.
-                    if (ranges.Any(range => range.StartTime < candidate.EndTime && candidate.StartTime < range.EndTime))
-                    {
+                    // Dữ liệu cũ có thể có hai ca chồng nhau cho cùng bác sĩ: ca nào đến trước thì giữ, không tạo slot trùng giờ.
+                    if (taken.Any(slot => slot.StartTime < candidate.EndTime && candidate.StartTime < slot.EndTime))
                         continue;
-                    }
 
-                    ranges.Add(candidate);
+                    taken.Add(candidate);
                     desiredSlots.Add((candidate.DoctorId, candidate.Date, candidate.StartTime), candidate);
                 }
             }
@@ -216,106 +170,76 @@ public class AppointmentSlotService : IAppointmentSlotService
         return desiredSlots;
     }
 
-    private static (Dictionary<DateOnly, string?> HospitalReasons, Dictionary<(int DoctorId, DateOnly Date), string?> DoctorReasons)
-        BuildUnavailableReasons(IEnumerable<NonWorkingDay> nonWorkingDays)
+    // Bệnh viện nghỉ được ưu tiên hơn bác sĩ nghỉ. Trả null nếu hôm đó làm việc bình thường.
+    private static string? GetDayOffReason(List<NonWorkingDay> nonWorkingDays, int doctorId, DateOnly date)
     {
-        var hospitalReasons = nonWorkingDays
-            .Where(day => day.DoctorId is null)
-            .GroupBy(day => day.Date)
-            .ToDictionary(group => group.Key, group => group.First().Reason);
+        var hospitalDayOff = nonWorkingDays.FirstOrDefault(day => day.DoctorId == null && day.Date == date);
+        if (hospitalDayOff is not null)
+            return string.IsNullOrWhiteSpace(hospitalDayOff.Reason) ? "Bệnh viện nghỉ." : hospitalDayOff.Reason;
 
-        var doctorReasons = nonWorkingDays
-            .Where(day => day.DoctorId.HasValue)
-            .GroupBy(day => (day.DoctorId!.Value, day.Date))
-            .ToDictionary(group => group.Key, group => group.First().Reason);
+        var doctorDayOff = nonWorkingDays.FirstOrDefault(day => day.DoctorId == doctorId && day.Date == date);
+        if (doctorDayOff is not null)
+            return string.IsNullOrWhiteSpace(doctorDayOff.Reason) ? "Bác sĩ nghỉ." : doctorDayOff.Reason;
 
-        return (hospitalReasons, doctorReasons);
+        return null;
     }
 
-    private static string? GetUnavailableReason(
-        IReadOnlyDictionary<DateOnly, string?> hospitalReasons,
-        IReadOnlyDictionary<(int DoctorId, DateOnly Date), string?> doctorReasons,
-        int doctorId,
-        DateOnly date)
-    {
-        return hospitalReasons.TryGetValue(date, out var hospitalReason)
-            ? string.IsNullOrWhiteSpace(hospitalReason) ? "Bệnh viện nghỉ." : hospitalReason
-            : doctorReasons.TryGetValue((doctorId, date), out var doctorReason)
-                ? string.IsNullOrWhiteSpace(doctorReason) ? "Bác sĩ nghỉ." : doctorReason
-                : null;
-    }
+    // Slot mới có bị chồng giờ với một slot đã được đặt (khác giờ bắt đầu) của cùng bác sĩ hay không.
+    // Xảy ra khi đổi giờ ca làm việc sau khi đã có người đặt lịch theo giờ cũ.
+    private static bool OverlapsBooking(DesiredSlot desired, List<AppointmentSlot> bookedSlots)
+        => bookedSlots.Any(booked =>
+            booked.DoctorId == desired.DoctorId && booked.Date == desired.Date &&
+            booked.StartTime != desired.StartTime &&
+            booked.StartTime < desired.EndTime && desired.StartTime < booked.EndTime);
 
-    private static bool SetAvailability(AppointmentSlot appointmentSlot, string? unavailableReason, DateTime changedAt)
+    private static AppointmentSlot CreateSlot(DesiredSlot desired, string? unavailableReason, DateTime createdAt) => new()
     {
-        var status = unavailableReason is null
-            ? AppointmentSlotStatus.Available
-            : AppointmentSlotStatus.Unavailable;
+        DoctorId = desired.DoctorId,
+        DoctorShiftId = desired.DoctorShiftId,
+        Date = desired.Date,
+        StartTime = desired.StartTime,
+        EndTime = desired.EndTime,
+        Status = unavailableReason is null ? AppointmentSlotStatus.Available : AppointmentSlotStatus.Unavailable,
+        UnavailableReason = unavailableReason,
+        CreatedAt = createdAt
+    };
 
-        if (appointmentSlot.Status == status && appointmentSlot.UnavailableReason == unavailableReason)
-        {
+    // Trả true nếu có thay đổi (để biết có cần SaveChanges hay không).
+    private static bool UpdateFromSchedule(AppointmentSlot slot, DesiredSlot desired, DateTime changedAt)
+    {
+        if (slot.DoctorShiftId == desired.DoctorShiftId && slot.EndTime == desired.EndTime)
             return false;
-        }
 
-        appointmentSlot.Status = status;
-        appointmentSlot.UnavailableReason = unavailableReason;
-        appointmentSlot.UpdatedAt = changedAt;
+        slot.DoctorShiftId = desired.DoctorShiftId;
+        slot.EndTime = desired.EndTime;
+        slot.UpdatedAt = changedAt;
         return true;
     }
 
-    private static IEnumerable<DateOnly> EnumerateDates(DateOnly fromDate, DateOnly toDate)
+    // Trả true nếu có thay đổi (để biết có cần SaveChanges hay không).
+    private static bool SetAvailability(AppointmentSlot slot, string? unavailableReason, DateTime changedAt)
     {
-        for (var date = fromDate; date <= toDate; date = date.AddDays(1))
-        {
-            yield return date;
-        }
+        var status = unavailableReason is null ? AppointmentSlotStatus.Available : AppointmentSlotStatus.Unavailable;
+        if (slot.Status == status && slot.UnavailableReason == unavailableReason)
+            return false;
+
+        slot.Status = status;
+        slot.UnavailableReason = unavailableReason;
+        slot.UpdatedAt = changedAt;
+        return true;
     }
 
-    private static (DateOnly From, DateOnly To) GetValidatedReadRange(DateOnly? fromDate, DateOnly? toDate)
+    private static AppointmentSlotDto MapToDto(AppointmentSlot slot) => new()
     {
-        var today = ClinicClock.Today;
-        var windowEnd = today.AddDays(RollingWindowDays - 1);
-        var from = fromDate ?? today;
-        var to = toDate ?? windowEnd;
+        AppointmentSlotId = slot.AppointmentSlotId,
+        DoctorId = slot.DoctorId,
+        DoctorShiftId = slot.DoctorShiftId,
+        Date = slot.Date,
+        StartTime = slot.StartTime,
+        EndTime = slot.EndTime,
+        Status = slot.Status,
+        UnavailableReason = slot.UnavailableReason
+    };
 
-        if (from < today || to > windowEnd || to < from || from.DayNumber + RollingWindowDays - 1 < to.DayNumber)
-        {
-            throw new ValidationException(new[]
-            {
-                new ValidationFailure("dateRange", "Khoảng ngày phải nằm trong 7 ngày từ hôm nay theo giờ Việt Nam.")
-            });
-        }
-
-        return (from, to);
-    }
-
-    private static (DateOnly From, DateOnly To, bool HasWindow) IntersectWithRollingWindow(DateOnly fromDate, DateOnly toDate)
-    {
-        var windowStart = ClinicClock.Today;
-        var windowEnd = windowStart.AddDays(RollingWindowDays - 1);
-        var from = fromDate > windowStart ? fromDate : windowStart;
-        var to = toDate < windowEnd ? toDate : windowEnd;
-        return (from, to, from <= to);
-    }
-
-    private static AppointmentSlotDto MapToDto(AppointmentSlot appointmentSlot)
-    {
-        return new AppointmentSlotDto
-        {
-            AppointmentSlotId = appointmentSlot.AppointmentSlotId,
-            DoctorId = appointmentSlot.DoctorId,
-            DoctorShiftId = appointmentSlot.DoctorShiftId,
-            Date = appointmentSlot.Date,
-            StartTime = appointmentSlot.StartTime,
-            EndTime = appointmentSlot.EndTime,
-            Status = appointmentSlot.Status,
-            UnavailableReason = appointmentSlot.UnavailableReason
-        };
-    }
-
-    private sealed record DesiredSlot(
-        int DoctorId,
-        int DoctorShiftId,
-        DateOnly Date,
-        TimeOnly StartTime,
-        TimeOnly EndTime);
+    private sealed record DesiredSlot(int DoctorId, int DoctorShiftId, DateOnly Date, TimeOnly StartTime, TimeOnly EndTime);
 }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using WebDatLichKhamBenh.Api.Extensions;
 
 namespace WebDatLichKhamBenh.Api.Security;
 
@@ -27,12 +28,13 @@ public class CsrfValidationFilter : IAsyncAuthorizationFilter
         }
         catch (AntiforgeryValidationException)
         {
-            context.Result = new ObjectResult(new ProblemDetails
+            var problem = context.HttpContext.CreateProblem(StatusCodes.Status400BadRequest,
+                "CSRF token không hợp lệ. Gọi GET /api/auth/csrf rồi gửi requestToken trong header X-CSRF-TOKEN.");
+            context.Result = new ObjectResult(problem)
             {
-                Status = StatusCodes.Status400BadRequest,
-                Title = "CSRF token không hợp lệ.",
-                Detail = "Gọi GET /api/auth/csrf rồi gửi requestToken trong header X-CSRF-TOKEN."
-            }) { StatusCode = StatusCodes.Status400BadRequest };
+                StatusCode = StatusCodes.Status400BadRequest,
+                ContentTypes = { "application/problem+json" }
+            };
         }
     }
 }

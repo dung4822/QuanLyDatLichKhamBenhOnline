@@ -1,89 +1,73 @@
 using FluentValidation;
-using FluentValidation.Results;
 using Microsoft.Extensions.Logging;
 using WebDatLichKhamBenh.Application.DTOs.Doctors;
-using WebDatLichKhamBenh.Application.DTOs.Images;
 using WebDatLichKhamBenh.Application.Exceptions;
 using WebDatLichKhamBenh.Application.Interfaces.Repositories;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
-using WebDatLichKhamBenh.Domain.Entities;
 using WebDatLichKhamBenh.Application.Time;
+using WebDatLichKhamBenh.Domain.Entities;
 
 namespace WebDatLichKhamBenh.Application.Services;
 
+// Ảnh đại diện lưu ở Cloudinary, dữ liệu bác sĩ lưu ở PostgreSQL. Hai nơi này không chung transaction,
+// nên phải tự "dọn" ảnh khi một bên thành công còn bên kia thất bại (gọi là compensation).
 public class DoctorService : IDoctorService
 {
-    private readonly IClinicScheduleTransaction _transaction;
-    private readonly IAppointmentRepository _appointments;
     private readonly IDoctorRepository _doctorRepository;
     private readonly ISpecialtyRepository _specialtyRepository;
-    private readonly IImageStorageService _imageStorageService;
+    private readonly IAppointmentRepository _appointments;
     private readonly IAppointmentSlotService _appointmentSlotService;
+    private readonly IImageStorageService _imageStorageService;
+    private readonly IClinicScheduleTransaction _transaction;
     private readonly IValidator<CreateDoctorRequest> _createValidator;
     private readonly IValidator<UpdateDoctorRequest> _updateValidator;
     private readonly ILogger<DoctorService> _logger;
 
     public DoctorService(
-        IClinicScheduleTransaction transaction,
-        IAppointmentRepository appointments,
         IDoctorRepository doctorRepository,
         ISpecialtyRepository specialtyRepository,
-        IImageStorageService imageStorageService,
+        IAppointmentRepository appointments,
         IAppointmentSlotService appointmentSlotService,
+        IImageStorageService imageStorageService,
+        IClinicScheduleTransaction transaction,
         IValidator<CreateDoctorRequest> createValidator,
         IValidator<UpdateDoctorRequest> updateValidator,
         ILogger<DoctorService> logger)
     {
-        _transaction = transaction;
-        _appointments = appointments;
         _doctorRepository = doctorRepository;
         _specialtyRepository = specialtyRepository;
-        _imageStorageService = imageStorageService;
+        _appointments = appointments;
         _appointmentSlotService = appointmentSlotService;
+        _imageStorageService = imageStorageService;
+        _transaction = transaction;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
         _logger = logger;
     }
 
-    public async Task<List<DoctorDto>> GetAllAsync(int? specialtyId = null)
+    public Task<List<DoctorDto>> GetAllAsync(int? specialtyId = null)
+        => _doctorRepository.GetListDoctorAsync(specialtyId);
+
+    public Task<DoctorDto?> GetByIdAsync(int doctorId)
+        => _doctorRepository.GetDoctorByIdAsync(doctorId);
+
+    public async Task<DoctorDto> CreateAsync(CreateDoctorRequest request, CancellationToken cancellationToken = default)
     {
-        return await _doctorRepository.GetListDoctorAsync(specialtyId);
-    }
+        await _createValidator.ValidateAndThrowAsync(request, cancellationToken);
+        var specialty = await GetRequiredSpecialtyAsync(request.SpecialtyId);
 
-    public async Task<DoctorDto?> GetByIdAsync(int doctorId)
-    {
-        return await _doctorRepository.GetDoctorByIdAsync(doctorId);
-    }
-
-    public async Task<DoctorDto> CreateAsync(
-        CreateDoctorRequest createDoctorRequest,
-        CancellationToken cancellationToken = default)
-    {
-
-
-        //check validation du liệu nhận vào => nếu không pass => khỏi làm gì
-        await _createValidator.ValidateAndThrowAsync(createDoctorRequest, cancellationToken);
-        var specialty = await EnsureSpecialtyExistsAsync(createDoctorRequest.SpecialtyId);
-
-        ImageUploadResult? uploadedAvatar = null;
-        if (createDoctorRequest.Avatar is not null)
-        {
-            uploadedAvatar = await _imageStorageService.UploadAsync(
-                createDoctorRequest.Avatar,
-                cancellationToken);
-        }
-
+        var avatar = request.Avatar is null ? null : await _imageStorageService.UploadAsync(request.Avatar, cancellationToken);
         var doctor = new Doctor
         {
-            FullName = createDoctorRequest.FullName.Trim(),
-            PhoneNumber = createDoctorRequest.PhoneNumber?.Trim(),
-            Email = createDoctorRequest.Email?.Trim(),
-            Gender = createDoctorRequest.Gender,
-            Address = createDoctorRequest.Address?.Trim(),
-            CareerStartDate = createDoctorRequest.CareerStartDate,
-            SpecialtyId = createDoctorRequest.SpecialtyId,
-            AvatarUrl = uploadedAvatar?.Url,
-            AvatarStorageKey = uploadedAvatar?.StorageKey,
+            FullName = request.FullName.Trim(),
+            PhoneNumber = request.PhoneNumber?.Trim(),
+            Email = request.Email?.Trim(),
+            Gender = request.Gender,
+            Address = request.Address?.Trim(),
+            CareerStartDate = request.CareerStartDate,
+            SpecialtyId = request.SpecialtyId,
+            AvatarUrl = avatar?.Url,
+            AvatarStorageKey = avatar?.StorageKey,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -92,32 +76,27 @@ public class DoctorService : IDoctorService
             await _doctorRepository.AddAsync(doctor);
             await _doctorRepository.SaveChangesAsync();
         }
-        catch (Exception exception)
+        catch
         {
-            // Cloudinary đã lưu thành công nhưng DB thất bại: xóa bù ảnh vừa tạo.
-            await TryDeleteImageAsync(
-                uploadedAvatar?.StorageKey,
-                "rollback ảnh mới vì không tạo được Doctor trong database");
-
-            throw new DataPersistenceException(
-                "Không thể lưu Doctor vào database. Ảnh mới đã được rollback nếu có thể.",
-                exception);
+            // Ảnh đã lên Cloudinary nhưng DB lưu thất bại → xóa ảnh vừa upload rồi báo lỗi như bình thường.
+            await TryDeleteImageAsync(avatar?.StorageKey, "rollback ảnh mới vì không tạo được Doctor trong database");
+            throw;
         }
 
         return MapToDto(doctor, specialty.Name);
     }
 
-    public async Task<DoctorDto?> UpdateAsync(int doctorId, UpdateDoctorRequest request,
-        CancellationToken cancellationToken = default)
+    public async Task<DoctorDto?> UpdateAsync(int doctorId, UpdateDoctorRequest request, CancellationToken cancellationToken = default)
     {
         await _updateValidator.ValidateAndThrowAsync(request, cancellationToken);
         if (await _doctorRepository.GetDoctorByIdAsync(doctorId) is null)
             return null;
 
-        // Không giữ khóa lịch khám trong lúc upload ảnh.
-        ImageUploadResult? uploadedAvatar = request.Avatar is null ? null :
-            await _imageStorageService.UploadAsync(request.Avatar, cancellationToken);
-        string? oldAvatarStorageKey = null;
+        // Bước 1: upload ảnh mới TRƯỚC transaction, để không giữ khóa lịch khám trong lúc chờ Cloudinary.
+        var newAvatar = request.Avatar is null ? null : await _imageStorageService.UploadAsync(request.Avatar, cancellationToken);
+
+        // Bước 2: cập nhật DB. Thất bại thì xóa ảnh mới để không để lại ảnh "mồ côi".
+        string? oldAvatarKey = null;
         DoctorDto? result;
         try
         {
@@ -126,12 +105,13 @@ public class DoctorService : IDoctorService
                 var doctor = await _doctorRepository.GetDoctorByIdTrackingAsync(doctorId);
                 if (doctor is null)
                     return null;
-                var specialty = await EnsureSpecialtyExistsAsync(request.SpecialtyId);
+
+                var specialty = await GetRequiredSpecialtyAsync(request.SpecialtyId);
                 var specialtyChanged = doctor.SpecialtyId != request.SpecialtyId;
                 if (specialtyChanged && await _appointments.HasUpcomingConfirmedAsync(ClinicClock.Now, doctorId: doctorId))
                     throw new AppointmentConflictException("Bác sĩ còn lịch hẹn chưa kết thúc, chưa thể đổi chuyên khoa.");
 
-                oldAvatarStorageKey = doctor.AvatarStorageKey;
+                oldAvatarKey = doctor.AvatarStorageKey;
                 doctor.FullName = request.FullName.Trim();
                 doctor.PhoneNumber = request.PhoneNumber?.Trim();
                 doctor.Email = request.Email?.Trim();
@@ -140,10 +120,10 @@ public class DoctorService : IDoctorService
                 doctor.CareerStartDate = request.CareerStartDate;
                 doctor.SpecialtyId = request.SpecialtyId;
                 doctor.UpdatedAt = DateTime.UtcNow;
-                if (uploadedAvatar is not null)
+                if (newAvatar is not null)
                 {
-                    doctor.AvatarUrl = uploadedAvatar.Url;
-                    doctor.AvatarStorageKey = uploadedAvatar.StorageKey;
+                    doctor.AvatarUrl = newAvatar.Url;
+                    doctor.AvatarStorageKey = newAvatar.StorageKey;
                 }
                 else if (request.RemoveAvatar)
                 {
@@ -157,97 +137,70 @@ public class DoctorService : IDoctorService
                 return MapToDto(doctor, specialty.Name);
             }, cancellationToken);
         }
-        catch (Exception exception)
+        catch
         {
-            await TryDeleteImageAsync(uploadedAvatar?.StorageKey, "rollback ảnh mới vì không cập nhật được Doctor");
-            if (exception is ValidationException or AppointmentConflictException or OperationCanceledException)
-                throw;
-            throw new DataPersistenceException("Không thể cập nhật Doctor trong database.", exception);
+            await TryDeleteImageAsync(newAvatar?.StorageKey, "rollback ảnh mới vì không cập nhật được Doctor");
+            throw;
         }
 
+        // Bước 3: DB đã commit thành công thì mới dọn ảnh không còn dùng.
         if (result is null)
-            await TryDeleteImageAsync(uploadedAvatar?.StorageKey, "bác sĩ đã bị xóa trước khi cập nhật");
-        else if (uploadedAvatar is not null || request.RemoveAvatar)
-            await TryDeleteImageAsync(oldAvatarStorageKey, "dọn ảnh cũ sau khi transaction đã commit");
+            await TryDeleteImageAsync(newAvatar?.StorageKey, "bác sĩ đã bị xóa trước khi cập nhật");
+        else if (newAvatar is not null || request.RemoveAvatar)
+            await TryDeleteImageAsync(oldAvatarKey, "dọn ảnh cũ sau khi transaction đã commit");
         return result;
     }
 
+    // Xóa mềm nên giữ lại ảnh, để sau này còn có thể khôi phục bác sĩ.
     public Task<bool> DeleteAsync(int doctorId)
-        => _transaction.ExecuteAsync(() => DeleteCoreAsync(doctorId));
-
-    private async Task<bool> DeleteCoreAsync(int doctorId)
-    {
-        var doctor = await _doctorRepository.GetDoctorByIdTrackingAsync(doctorId);
-        if (doctor is null)
+        => _transaction.ExecuteAsync(async () =>
         {
-            return false;
-        }
+            var doctor = await _doctorRepository.GetDoctorByIdTrackingAsync(doctorId);
+            if (doctor is null)
+                return false;
 
-        // Soft delete nên giữ ảnh để sau này còn có thể khôi phục Doctor.
-        if (await _appointments.HasUpcomingConfirmedAsync(ClinicClock.Now, doctorId: doctorId))
-            throw new AppointmentConflictException("Bác sĩ còn lịch hẹn chưa kết thúc, không thể xóa.");
-        doctor.IsDelete = true;
-        await _doctorRepository.SaveChangesAsync();
-        await _appointmentSlotService.EnsureRollingWindowAsync();
-        return true;
-    }
+            if (await _appointments.HasUpcomingConfirmedAsync(ClinicClock.Now, doctorId: doctorId))
+                throw new AppointmentConflictException("Bác sĩ còn lịch hẹn chưa kết thúc, không thể xóa.");
 
-    private async Task<Specialty> EnsureSpecialtyExistsAsync(int specialtyId)
-    {
-        var specialty = await _specialtyRepository.GetByIdAsync(specialtyId);
-        if (specialty is not null)
-        {
-            return specialty;
-        }
-
-        throw new ValidationException(new[]
-        {
-            new ValidationFailure(
-                nameof(CreateDoctorRequest.SpecialtyId),
-                "Chuyên khoa không tồn tại.")
+            doctor.IsDelete = true;
+            await _doctorRepository.SaveChangesAsync();
+            await _appointmentSlotService.EnsureRollingWindowAsync();
+            return true;
         });
-    }
 
+    private async Task<Specialty> GetRequiredSpecialtyAsync(int specialtyId)
+        => await _specialtyRepository.GetByIdAsync(specialtyId)
+            ?? throw ValidationErrors.For(nameof(CreateDoctorRequest.SpecialtyId), "Chuyên khoa không tồn tại.");
+
+    // Dọn ảnh là việc "phụ": lỗi thì chỉ ghi log, không làm hỏng kết quả của thao tác chính.
     private async Task TryDeleteImageAsync(string? storageKey, string reason)
     {
         if (string.IsNullOrWhiteSpace(storageKey))
-        {
             return;
-        }
 
         try
         {
-            // Cleanup vẫn cần chạy kể cả request gốc vừa bị hủy.
+            // Dùng CancellationToken.None: việc dọn vẫn cần chạy kể cả khi request gốc đã bị hủy.
             await _imageStorageService.DeleteAsync(storageKey, CancellationToken.None);
         }
         catch (Exception exception)
         {
-            // Không ném lỗi tiếp: thao tác DB chính đã có kết quả rõ ràng.
-            _logger.LogWarning(
-                exception,
-                "Không thể xóa ảnh {StorageKey} khi {Reason}. Ảnh có thể bị orphan.",
-                storageKey,
-                reason);
+            _logger.LogWarning(exception, "Không thể xóa ảnh {StorageKey} khi {Reason}. Ảnh có thể bị orphan.", storageKey, reason);
         }
     }
 
-    private static DoctorDto MapToDto(Doctor doctor, string specialtyName)
+    private static DoctorDto MapToDto(Doctor doctor, string specialtyName) => new()
     {
-        var currentYear = DateTime.UtcNow.Year;
-
-        return new DoctorDto
-        {
-            DoctorId = doctor.DoctorId,
-            SpecialtyId = doctor.SpecialtyId,
-            SpecialtyName = specialtyName,
-            FullName = doctor.FullName,
-            PhoneNumber = doctor.PhoneNumber,
-            Email = doctor.Email,
-            Gender = doctor.Gender,
-            Address = doctor.Address,
-            AvatarUrl = doctor.AvatarUrl,
-            CareerStartDate = doctor.CareerStartDate,
-            Experience = currentYear - doctor.CareerStartDate.Year
-        };
-    }
+        DoctorId = doctor.DoctorId,
+        SpecialtyId = doctor.SpecialtyId,
+        SpecialtyName = specialtyName,
+        FullName = doctor.FullName,
+        PhoneNumber = doctor.PhoneNumber,
+        Email = doctor.Email,
+        Gender = doctor.Gender,
+        Address = doctor.Address,
+        AvatarUrl = doctor.AvatarUrl,
+        CareerStartDate = doctor.CareerStartDate,
+        Experience = DateTime.UtcNow.Year - doctor.CareerStartDate.Year
+    };
 }

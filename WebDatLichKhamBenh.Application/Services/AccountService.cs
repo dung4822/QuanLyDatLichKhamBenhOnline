@@ -2,6 +2,7 @@ using FluentValidation;
 using WebDatLichKhamBenh.Application.DTOs.Accounts;
 using WebDatLichKhamBenh.Application.DTOs.Patients;
 using WebDatLichKhamBenh.Application.Exceptions;
+using WebDatLichKhamBenh.Application.Extensions;
 using WebDatLichKhamBenh.Application.Interfaces.Repositories;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 using WebDatLichKhamBenh.Application.Validators;
@@ -20,10 +21,12 @@ public class AccountService : IAccountService
     private readonly ICurrentUser _currentUser;
     private readonly IClinicScheduleTransaction _transaction;
     private readonly IPatientService _patientService;
+    private readonly IValidator<CreateAccountRequest> _createValidator;
 
     public AccountService(IAccountRepository accounts, IPatientRepository patients,
         IDoctorRepository doctors, IPasswordService passwords, ICurrentUser currentUser,
-        IClinicScheduleTransaction transaction, IPatientService patientService)
+        IClinicScheduleTransaction transaction, IPatientService patientService,
+        IValidator<CreateAccountRequest> createValidator)
     {
         _accounts = accounts;
         _patients = patients;
@@ -32,6 +35,7 @@ public class AccountService : IAccountService
         _currentUser = currentUser;
         _transaction = transaction;
         _patientService = patientService;
+        _createValidator = createValidator;
     }
 
     public async Task<MyProfileDto> GetMyProfileAsync()
@@ -53,7 +57,7 @@ public class AccountService : IAccountService
     public async Task<AccountDto> CreateAsync(CreateAccountRequest request)
     {
         RequireAdmin();
-        await new CreateAccountValidator().ValidateAndThrowAsync(request);
+        await _createValidator.ValidateAndThrowAsync(request);
         var account = NewAccount(request.Email, request.DisplayName, request.Password, request.Role);
         return await _transaction.ExecuteAsync(async () =>
         {
@@ -70,8 +74,7 @@ public class AccountService : IAccountService
     public async Task<List<AccountDto>> GetPageAsync(int page, int pageSize)
     {
         RequireAdmin();
-        if (page is < 1 or > 1_000_000 || pageSize is < 1 or > 100)
-            throw new ValidationException("Page phải từ 1 đến 1000000; PageSize từ 1 đến 100.");
+        PagingRules.EnsureValid(page, pageSize);
         return (await _accounts.GetPageAsync(page, pageSize)).Select(account => account.ToDto()).ToList();
     }
 
@@ -105,7 +108,7 @@ public class AccountService : IAccountService
             DisplayName = "Quản trị viên",
             Role = AccountRole.Admin
         };
-        await new CreateAccountValidator().ValidateAndThrowAsync(request);
+        await _createValidator.ValidateAndThrowAsync(request);
         var account = NewAccount(email, request.DisplayName, password, AccountRole.Admin);
         await _transaction.ExecuteAsync(async () =>
         {
@@ -151,12 +154,11 @@ public class AccountService : IAccountService
         var account = new UserAccount
         {
             Email = email.Trim(),
-            NormalizedEmail = NormalizeEmail(email),
+            NormalizedEmail = email.ToNormalizedEmail(),
             DisplayName = name.Trim(),
             Role = role
         };
         account.PasswordHash = _passwords.Hash(account, password);
         return account;
     }
-    private static string NormalizeEmail(string email) => email.Trim().ToUpperInvariant();
 }

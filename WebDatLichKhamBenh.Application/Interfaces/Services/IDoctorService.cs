@@ -1,23 +1,17 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using WebDatLichKhamBenh.Application.DTOs.Doctors;
 
-namespace WebDatLichKhamBenh.Application.Interfaces.Services
+namespace WebDatLichKhamBenh.Application.Interfaces.Services;
+
+public interface IDoctorService
 {
-    public interface IDoctorService
-    {
-        Task<List<DoctorDto>> GetAllAsync(int? specialtyId = null);
-        Task<DoctorDto?> GetByIdAsync(int doctorId);
-        Task<DoctorDto> CreateAsync(
-            CreateDoctorRequest createDoctorRequest,
-            CancellationToken cancellationToken = default);
-        Task<bool> DeleteAsync(int doctorId);
-        Task<DoctorDto?> UpdateAsync(
-            int doctorId,
-            UpdateDoctorRequest updateDoctorRequest,
-            CancellationToken cancellationToken = default);
-    }
+    Task<List<DoctorDto>> GetAllAsync(int? specialtyId = null);
+    Task<DoctorDto?> GetByIdAsync(int doctorId);
+    Task<DoctorDto> CreateAsync(
+        CreateDoctorRequest createDoctorRequest,
+        CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int doctorId);
+    Task<DoctorDto?> UpdateAsync(
+        int doctorId,
+        UpdateDoctorRequest updateDoctorRequest,
+        CancellationToken cancellationToken = default);
 }

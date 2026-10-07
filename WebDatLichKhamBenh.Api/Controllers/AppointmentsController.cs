@@ -21,7 +21,7 @@ public class AppointmentsController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var appointment = await _service.GetByIdAsync(id);
-        return appointment is null ? NotFound(new { message = "Lịch hẹn không tồn tại." }) : Ok(appointment);
+        return appointment is null ? NotFound() : Ok(appointment);
     }
 
     [HttpPost]

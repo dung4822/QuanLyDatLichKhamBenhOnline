@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using WebDatLichKhamBenh.Api.Extensions;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 
 namespace WebDatLichKhamBenh.Api.Security;
@@ -37,13 +38,12 @@ public class ClinicCookieEvents : CookieAuthenticationEvents
     // Web API trả mã lỗi JSON, không redirect sang trang đăng nhập như ứng dụng MVC.
     public override Task RedirectToLogin(RedirectContext<CookieAuthenticationOptions> context)
     {
-        return Results.Problem(statusCode: StatusCodes.Status401Unauthorized,
-            title: "Vui lòng đăng nhập.").ExecuteAsync(context.HttpContext);
+        return context.HttpContext.WriteProblemAsync(StatusCodes.Status401Unauthorized);
     }
 
     public override Task RedirectToAccessDenied(RedirectContext<CookieAuthenticationOptions> context)
     {
-        return Results.Problem(statusCode: StatusCodes.Status403Forbidden,
-            title: "Bạn không có quyền thực hiện thao tác này.").ExecuteAsync(context.HttpContext);
+        return context.HttpContext.WriteProblemAsync(StatusCodes.Status403Forbidden,
+            "Bạn không có quyền thực hiện thao tác này.");
     }
 }

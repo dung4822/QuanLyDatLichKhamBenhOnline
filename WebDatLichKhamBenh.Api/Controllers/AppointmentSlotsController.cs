@@ -1,6 +1,5 @@
-using FluentValidation;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 
 namespace WebDatLichKhamBenh.Api.Controllers;
@@ -18,26 +17,9 @@ public class AppointmentSlotsController : ControllerBase
 
     [HttpGet]
     [AllowAnonymous]
-    public async Task<IActionResult> GetAvailable(
-        int doctorId,
-        [FromQuery] DateOnly? fromDate,
-        [FromQuery] DateOnly? toDate)
+    public async Task<IActionResult> GetAvailable(int doctorId, [FromQuery] DateOnly? fromDate, [FromQuery] DateOnly? toDate)
     {
-        try
-        {
-            var slots = await _appointmentSlotService.GetAvailableSlotsAsync(doctorId, fromDate, toDate);
-            return slots is null
-                ? NotFound(new { message = $"Doctor with ID {doctorId} does not exist." })
-                : Ok(slots);
-        }
-        catch (ValidationException exception)
-        {
-            foreach (var error in exception.Errors)
-            {
-                ModelState.AddModelError(error.PropertyName, error.ErrorMessage);
-            }
-
-            return ValidationProblem(ModelState);
-        }
+        var slots = await _appointmentSlotService.GetAvailableSlotsAsync(doctorId, fromDate, toDate);
+        return slots is null ? NotFound() : Ok(slots);
     }
 }

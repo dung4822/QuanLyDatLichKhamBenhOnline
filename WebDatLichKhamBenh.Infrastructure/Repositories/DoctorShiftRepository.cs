@@ -18,20 +18,16 @@ public class DoctorShiftRepository : IDoctorShiftRepository
     public async Task<List<DoctorShiftDto>> GetByDoctorIdAsync(int doctorId)
     {
         return await _context.DoctorShifts
-
          .Where(ds =>
              ds.DoctorId == doctorId &&
              !ds.IsDeleted &&
              !ds.Shift.IsDeleted &&
              ds.Shift.IsActive)
-
          .OrderBy(ds =>
              ds.Shift.DayOfWeek == DayOfWeek.Sunday
                  ? 7
                  : (int)ds.Shift.DayOfWeek)
-
          .ThenBy(ds => ds.Shift.StartTime)
-
          .Select(ds => new DoctorShiftDto
          {
              DoctorShiftId = ds.DoctorShiftId,
@@ -48,9 +44,7 @@ public class DoctorShiftRepository : IDoctorShiftRepository
              CreatedAt = ds.CreatedAt,
              UpdatedAt = ds.UpdatedAt
          })
-
          .ToListAsync();
-
     }
 
     public async Task<List<DoctorShift>> GetByDoctorIdTrackingAsync(int doctorId)
@@ -68,12 +62,5 @@ public class DoctorShiftRepository : IDoctorShiftRepository
     public async Task SaveChangesAsync()
     {
         await _context.SaveChangesAsync();
-    }
-
-    private IQueryable<DoctorShift> QueryWithDetails()
-    {
-        return _context.DoctorShifts
-            .Include(doctorShift => doctorShift.Doctor)
-            .Include(doctorShift => doctorShift.Shift);
     }
 }

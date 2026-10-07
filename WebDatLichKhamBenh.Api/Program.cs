@@ -8,6 +8,7 @@ using System.Threading.RateLimiting;
 using Microsoft.OpenApi.Models;
 using WebDatLichKhamBenh.Api.Security;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
+using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,10 +36,18 @@ builder.Services.AddSwaggerGen(options =>
         [new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "CSRF" } }] = Array.Empty<string>()
     });
 });
+builder.Services.AddClinicProblemDetails();
 builder.Services.AddClinicAuthentication();
 builder.Services.AddRateLimiter(options =>
 {
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, _) => new ValueTask(context.HttpContext.WriteProblemAsync(
+        StatusCodes.Status429TooManyRequests, "Bạn gửi yêu cầu quá nhanh. Vui lòng thử lại sau ít phút."));
+    options.AddPolicy("chat", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true
+        }));
     options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
         {
@@ -76,6 +85,8 @@ if (args.Contains("--bootstrap-admin"))
     return;
 }
 app.UseMiddleware<ApiExceptionMiddleware>();
+// Response lỗi KHÔNG có body (route không tồn tại, sai HTTP method...) cũng được ghi thành ProblemDetails.
+app.UseStatusCodePages();
 
 if (app.Environment.IsDevelopment())
 {
