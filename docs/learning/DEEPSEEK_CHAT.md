@@ -214,4 +214,6 @@ chỉ tạo 1 lịch, slot bị chiếm thì thẻ `Failed`, thẻ hết hạn/�
 đổi/hủy lịch, không đụng được lịch người khác, sửa hồ sơ không ghi đè thay đổi mới hơn, thẻ mới thay thẻ cũ,
 gửi lại cùng `clientMessageId` không gọi AI lần nữa.
 
-Đã kiểm tra ngày 07/10/2026: build thành công, 161/161 test đạt (PostgreSQL local).
+Xem [hướng dẫn chạy test local](../../tests/README.md) để cấu hình PostgreSQL và chạy toàn bộ bộ test.
+
+Đã kiểm tra ngày 13/10/2026: build thành công, 172/172 test đạt (PostgreSQL local).

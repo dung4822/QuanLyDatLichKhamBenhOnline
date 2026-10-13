@@ -49,6 +49,110 @@ public class ChatActionApiTests(AppointmentApiFixture fixture) : IClassFixture<A
     }
 
     [Fact]
+    public async Task Confirm_audit_failure_rolls_back_booking_and_keeps_proposal_available_for_retry()
+    {
+        var s = await fixture.SeedAsync();
+        var (client, sessionId) = await StartChatAsync(s.PatientId);
+        using var patientClient = client;
+        var action = (await AskAsync(client, sessionId, "propose_book_appointment",
+            new { appointmentSlotId = s.Slots[0] })).Action!;
+
+        fixture.Failures.FailNextHistorySave = true;
+        var failed = await client.PostAsync($"/api/chats/actions/{action.ChatActionId}/confirm", null);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, failed.StatusCode);
+        await using (var db = fixture.CreateDbContext())
+        {
+            var pending = await db.ChatActions.SingleAsync(x => x.ChatActionId == action.ChatActionId);
+            Assert.Equal(ChatActionStatus.Pending, pending.Status);
+            Assert.Null(pending.CompletedAt);
+            Assert.Null(pending.ResultJson);
+            Assert.Null(pending.FailureReason);
+            Assert.False(await db.Appointments.AnyAsync(x => x.PatientId == s.PatientId));
+            Assert.Equal(AppointmentSlotStatus.Available, (await db.AppointmentSlots.FindAsync(s.Slots[0]))!.Status);
+        }
+        Assert.Equal(ChatActionStatus.Pending, (await GetCardAsync(client, sessionId)).Status);
+
+        var retry = await client.PostAsync($"/api/chats/actions/{action.ChatActionId}/confirm", null);
+
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        Assert.Equal(ChatActionStatus.Confirmed, (await ReadAsync<ChatActionDto>(retry)).Status);
+        await using (var db = fixture.CreateDbContext())
+        {
+            var appointment = Assert.Single(await db.Appointments.Where(x => x.PatientId == s.PatientId).ToListAsync());
+            Assert.Equal(s.Slots[0], appointment.AppointmentSlotId);
+            Assert.Equal(AppointmentStatus.Confirmed, appointment.Status);
+            Assert.Equal(AppointmentSlotStatus.Booked, (await db.AppointmentSlots.FindAsync(s.Slots[0]))!.Status);
+            var history = Assert.Single(await db.AppointmentHistories
+                .Where(x => x.AppointmentId == appointment.AppointmentId).ToListAsync());
+            Assert.Equal("Created", history.Action);
+            var confirmed = await db.ChatActions.SingleAsync(x => x.ChatActionId == action.ChatActionId);
+            Assert.Equal(ChatActionStatus.Confirmed, confirmed.Status);
+            Assert.NotNull(confirmed.CompletedAt);
+            using var result = JsonDocument.Parse(confirmed.ResultJson!);
+            Assert.Equal(appointment.AppointmentId, result.RootElement.GetProperty("appointmentId").GetInt32());
+        }
+    }
+
+    [Fact]
+    public async Task Reject_retry_returns_the_same_result_without_booking()
+    {
+        var s = await fixture.SeedAsync();
+        var (client, sessionId) = await StartChatAsync(s.PatientId);
+        using var patientClient = client;
+        var action = (await AskAsync(client, sessionId, "propose_book_appointment",
+            new { appointmentSlotId = s.Slots[0] })).Action!;
+
+        var first = await client.PostAsync($"/api/chats/actions/{action.ChatActionId}/reject", null);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        var rejected = await ReadAsync<ChatActionDto>(first);
+        Assert.Equal(ChatActionStatus.Rejected, rejected.Status);
+        Assert.NotNull(rejected.CompletedAt);
+
+        var retry = await client.PostAsync($"/api/chats/actions/{action.ChatActionId}/reject", null);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        var retried = await ReadAsync<ChatActionDto>(retry);
+        Assert.Equal(rejected.ChatActionId, retried.ChatActionId);
+        Assert.Equal(ChatActionStatus.Rejected, retried.Status);
+        Assert.Equal(rejected.CompletedAt, retried.CompletedAt);
+        Assert.Equal(ChatActionStatus.Rejected, (await GetCardAsync(client, sessionId)).Status);
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await client.PostAsync($"/api/chats/actions/{action.ChatActionId}/confirm", null)).StatusCode);
+
+        await using var db = fixture.CreateDbContext();
+        Assert.False(await db.Appointments.AnyAsync(x => x.PatientId == s.PatientId));
+        Assert.Equal(AppointmentSlotStatus.Available, (await db.AppointmentSlots.FindAsync(s.Slots[0]))!.Status);
+    }
+
+    [Theory]
+    [InlineData("confirm", ChatActionStatus.Confirmed)]
+    [InlineData("reject", ChatActionStatus.Rejected)]
+    public async Task Action_requires_csrf_before_changing_proposal_or_appointment(string operation, ChatActionStatus expectedStatus)
+    {
+        var s = await fixture.SeedAsync();
+        var (client, sessionId) = await StartChatAsync(s.PatientId);
+        using var patientClient = client;
+        var action = (await AskAsync(client, sessionId, "propose_book_appointment",
+            new { appointmentSlotId = s.Slots[0] })).Action!;
+        client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+
+        var rejected = await client.PostAsync($"/api/chats/actions/{action.ChatActionId}/{operation}", null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        var pending = await GetCardAsync(client, sessionId);
+        Assert.Equal(ChatActionStatus.Pending, pending.Status);
+        Assert.Null(pending.CompletedAt);
+        Assert.Equal(0, await CountActiveAppointmentsAsync(s.PatientId, s.Slots[0]));
+
+        await AppointmentApiFixture.RefreshCsrfTokenAsync(client);
+        var retry = await client.PostAsync($"/api/chats/actions/{action.ChatActionId}/{operation}", null);
+
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        Assert.Equal(expectedStatus, (await ReadAsync<ChatActionDto>(retry)).Status);
+        Assert.Equal(operation == "confirm" ? 1 : 0, await CountActiveAppointmentsAsync(s.PatientId, s.Slots[0]));
+    }
+
+    [Fact]
     public async Task Confirm_fails_and_card_shows_reason_when_slot_was_taken_meanwhile()
     {
         var s = await fixture.SeedAsync();

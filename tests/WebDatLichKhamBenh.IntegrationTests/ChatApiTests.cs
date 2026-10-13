@@ -98,6 +98,21 @@ public class ChatApiTests
     }
 
     [Fact]
+    public async Task SessionListOnlyContainsTheCurrentPatientsSessions()
+    {
+        await using var app = new ChatApp();
+        using var owner = await app.CreateClientAsync("Patient", patientId: 1);
+        using var stranger = await app.CreateClientAsync("Patient", patientId: 2);
+        var ownSessionId = await CreateSessionAsync(owner);
+        await CreateSessionAsync(stranger);
+
+        var sessions = await owner.GetFromJsonAsync<List<ChatSessionDto>>("/api/chats/sessions", Json);
+
+        Assert.Equal(ownSessionId, Assert.Single(sessions!).ChatSessionId);
+        Assert.Empty(app.Llm.Calls);
+    }
+
+    [Fact]
     public async Task ToolResultsAndSavedConversationReachLlm()
     {
         await using var app = new ChatApp(
@@ -165,6 +180,29 @@ public class ChatApiTests
     }
 
     [Fact]
+    public async Task SameClientMessageIdInDifferentSessionsDoesNotReuseAnotherConversationsReply()
+    {
+        await using var app = new ChatApp(
+            new LlmReply("Câu trả lời cuộc trò chuyện thứ nhất", []),
+            new LlmReply("Câu trả lời cuộc trò chuyện thứ hai", []));
+        using var client = await app.CreateClientAsync("Patient");
+        var firstSessionId = await CreateSessionAsync(client);
+        var secondSessionId = await CreateSessionAsync(client);
+        var clientMessageId = Guid.NewGuid();
+
+        var first = await SendAsync(client, firstSessionId, "Tin nhắn riêng thứ nhất", clientMessageId);
+        var second = await SendAsync(client, secondSessionId, "Tin nhắn riêng thứ hai", clientMessageId);
+
+        Assert.Equal(firstSessionId, first.ChatSessionId);
+        Assert.Equal(secondSessionId, second.ChatSessionId);
+        Assert.NotEqual(first.ChatTurnId, second.ChatTurnId);
+        Assert.Equal("Câu trả lời cuộc trò chuyện thứ hai", second.Reply);
+        Assert.Equal(2, app.Chats.Turns.Count);
+        Assert.Equal(2, app.Llm.Calls.Count);
+        Assert.DoesNotContain(app.Llm.Calls[1].Messages, message => message.Content == "Tin nhắn riêng thứ nhất");
+    }
+
+    [Fact]
     public async Task ProposalIsSavedWithTurnAndReplacesOlderPendingProposal()
     {
         var propose = new LlmToolCall("propose-1", "propose_book_appointment", """{"appointmentSlotId":1}""");
@@ -186,6 +224,84 @@ public class ChatApiTests
         Assert.Equal(ChatActionStatus.Pending, detail.Turns[1].Action!.Status);
         // Lượt sau, mô hình được báo trạng thái thật của đề xuất trước.
         Assert.Contains("CHƯA thực hiện", app.Llm.Calls[2].Messages[0].Content);
+    }
+
+    [Fact]
+    public async Task RetryingAnOlderMessageReturnsItsSupersededActionWithoutReplacingTheNewProposal()
+    {
+        await using var app = new ChatApp(
+            new LlmReply(null, [new LlmToolCall("first", "propose_book_appointment", """{"appointmentSlotId":1}""")]),
+            new LlmReply("Bạn kiểm tra thẻ thứ nhất nhé.", []),
+            new LlmReply(null, [new LlmToolCall("second", "propose_book_appointment", """{"appointmentSlotId":2}""")]),
+            new LlmReply("Bạn kiểm tra thẻ mới nhé.", []));
+        using var client = await app.CreateClientAsync("Patient");
+        var sessionId = await CreateSessionAsync(client);
+        var firstMessageId = Guid.NewGuid();
+        var first = await SendAsync(client, sessionId, "Đặt giờ thứ nhất", firstMessageId);
+        var second = await SendAsync(client, sessionId, "Đổi sang giờ thứ hai");
+
+        var retry = await SendAsync(client, sessionId, "Đặt giờ thứ nhất", firstMessageId);
+
+        Assert.Equal(first.ChatTurnId, retry.ChatTurnId);
+        Assert.Equal(first.Action!.ChatActionId, retry.Action!.ChatActionId);
+        Assert.Equal(ChatActionStatus.Superseded, retry.Action.Status);
+        var pending = Assert.Single(app.Chats.Turns.Where(turn => turn.Action?.Status == ChatActionStatus.Pending));
+        Assert.Equal(second.Action!.ChatActionId, pending.Action!.ChatActionId);
+        Assert.Equal(2, app.Chats.Turns.Count);
+        Assert.Equal(4, app.Llm.Calls.Count);
+    }
+
+    [Fact]
+    public async Task MultipleProposalsInOneReplyOnlySaveTheLastConfirmationCard()
+    {
+        const string lastPayload = """{"appointmentSlotId":2}""";
+        await using var app = new ChatApp(
+            new LlmReply(null,
+            [
+                new LlmToolCall("first", "propose_book_appointment", """{"appointmentSlotId":1}"""),
+                new LlmToolCall("second", "propose_book_appointment", lastPayload)
+            ]),
+            new LlmReply("Bạn kiểm tra giờ cuối cùng trên thẻ nhé.", []));
+        using var client = await app.CreateClientAsync("Patient");
+        var sessionId = await CreateSessionAsync(client);
+
+        var result = await SendAsync(client, sessionId, "Đặt giờ thứ hai giúp tôi");
+
+        var saved = Assert.Single(app.Chats.Turns);
+        Assert.NotNull(saved.Action);
+        Assert.Equal(lastPayload, saved.Action.PayloadJson);
+        Assert.Equal(saved.Action.ChatActionId, result.Action!.ChatActionId);
+        Assert.Equal(ChatActionStatus.Pending, result.Action.Status);
+    }
+
+    public static IEnumerable<object?[]> InvalidAssistantReplies()
+    {
+        yield return [null];
+        yield return ["   "];
+        yield return [new string('a', 4001)];
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidAssistantReplies))]
+    public async Task InvalidAssistantReplyDoesNotSaveItsProposalOrReplaceAnExistingPendingCard(string? reply)
+    {
+        await using var app = new ChatApp(
+            new LlmReply(null, [new LlmToolCall("first", "propose_book_appointment", """{"appointmentSlotId":1}""")]),
+            new LlmReply("Bạn kiểm tra thẻ nhé.", []),
+            new LlmReply(null, [new LlmToolCall("second", "propose_book_appointment", """{"appointmentSlotId":2}""")]),
+            new LlmReply(reply, []));
+        using var client = await app.CreateClientAsync("Patient");
+        var sessionId = await CreateSessionAsync(client);
+        var first = await SendAsync(client, sessionId, "Đặt giờ thứ nhất");
+
+        var response = await client.PostAsJsonAsync($"/api/chats/sessions/{sessionId}/messages",
+            new { message = "Đổi sang giờ thứ hai" });
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        var saved = Assert.Single(app.Chats.Turns);
+        Assert.Equal(first.ChatTurnId, saved.ChatTurnId);
+        Assert.Equal(first.Action!.ChatActionId, saved.Action!.ChatActionId);
+        Assert.Equal(ChatActionStatus.Pending, saved.Action.Status);
     }
 
     [Fact]

@@ -9,7 +9,6 @@ using Microsoft.OpenApi.Models;
 using WebDatLichKhamBenh.Api.Security;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 using System.Security.Claims;
-using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,15 +38,6 @@ builder.Services.AddSwaggerGen(options =>
 });
 builder.Services.AddClinicProblemDetails();
 builder.Services.AddClinicAuthentication();
-// Khóa mã hóa cookie đăng nhập/CSRF. Mặc định nằm trong container và mất khi container được tạo lại
-// (mọi người bị đăng xuất). Khi deploy bằng Docker, đặt DataProtection__KeysPath trỏ vào một volume.
-var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
-if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
-{
-    builder.Services.AddDataProtection()
-        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
-        .SetApplicationName("WebDatLichKhamBenh");
-}
 builder.Services.AddRateLimiter(options =>
 {
     options.OnRejected = (context, _) => new ValueTask(context.HttpContext.WriteProblemAsync(

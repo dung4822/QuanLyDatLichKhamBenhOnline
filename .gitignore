@@ -15,4 +15,3 @@ secrets.json
 *.pfx
 *.pem
 *.key
-!.env.example
