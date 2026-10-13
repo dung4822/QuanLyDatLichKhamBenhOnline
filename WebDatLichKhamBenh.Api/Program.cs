@@ -101,6 +101,8 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 app.MapControllers();
+// Render dùng để kiểm tra app còn sống; dịch vụ ping dùng để giữ app không ngủ.
+app.MapGet("/health", () => Results.Ok("ok")).AllowAnonymous();
 
 
 app.Run();

@@ -1,0 +1,25 @@
+# Blueprint cho Render: tạo Web Service chạy Dockerfile ở thư mục gốc.
+# Các biến `sync: false` là bí mật: Render sẽ hỏi giá trị lúc tạo, KHÔNG ghi vào Git.
+services:
+  - type: web
+    name: webdatlichkhambenh-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: PORT
+        value: "8080"
+      - key: ConnectionStrings__DefaultConnection
+        sync: false
+      - key: DeepSeek__ApiKey
+        sync: false
+      - key: Cloudinary__CloudName
+        sync: false
+      - key: Cloudinary__ApiKey
+        sync: false
+      - key: Cloudinary__ApiSecret
+        sync: false
