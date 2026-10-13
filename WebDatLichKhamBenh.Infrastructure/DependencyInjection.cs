@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<IChatRepository, ChatRepository>();
         services.AddSingleton<IPasswordService, WebDatLichKhamBenh.Infrastructure.Security.PasswordService>();
         services.AddScoped<IClinicScheduleTransaction, ClinicScheduleTransaction>();
+        services.AddScoped<DemoDataSeeder>();
         services.AddSingleton(new CloudinarySettings
         {
             CloudName = configuration[$"{CloudinarySettings.SectionName}:CloudName"] ?? string.Empty,

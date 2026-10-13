@@ -53,6 +53,16 @@ Các file liên quan:
 
    Mở terminal mới sau khi chạy xong để các biến môi trường trên không còn tác dụng.
 
+6. (Tuỳ chọn) Tạo dữ liệu demo: 5 chuyên khoa, 6 bác sĩ có ca làm, 5 bệnh nhân, lịch hẹn đủ trạng thái
+   và 3 tài khoản `letan@demo.com` (Lễ tân), `bacsi@demo.com` (Bác sĩ), `benhnhan@demo.com` (Bệnh nhân)
+   dùng chung một mật khẩu (ít nhất 12 ký tự). Chỉ chạy được trên database chưa có chuyên khoa/bác sĩ nào.
+
+   ```powershell
+   $env:ConnectionStrings__DefaultConnection = "NEON_CONN"
+   $env:DemoSeed__Password = "mật-khẩu-demo-ít-nhất-12-ký-tự"
+   dotnet run --project WebDatLichKhamBenh.Api -- --seed-demo
+   ```
+
 > Mỗi khi thêm migration mới, chạy lại lệnh ở mục 4.
 
 ## Bước 2: Render (backend)

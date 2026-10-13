@@ -9,6 +9,7 @@ using Microsoft.OpenApi.Models;
 using WebDatLichKhamBenh.Api.Security;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 using System.Security.Claims;
+using WebDatLichKhamBenh.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -82,6 +83,14 @@ if (args.Contains("--bootstrap-admin"))
         builder.Configuration["BootstrapAdmin:Email"] ?? throw new InvalidOperationException("Thiếu BootstrapAdmin:Email."),
         builder.Configuration["BootstrapAdmin:Password"] ?? throw new InvalidOperationException("Thiếu BootstrapAdmin:Password."));
     Console.WriteLine("Đã khởi tạo Admin. Hãy đăng nhập và đổi mật khẩu.");
+    return;
+}
+if (args.Contains("--seed-demo"))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<DemoDataSeeder>().SeedAsync(
+        builder.Configuration["DemoSeed:Password"] ?? throw new InvalidOperationException("Thiếu DemoSeed:Password."));
+    Console.WriteLine("Đã tạo dữ liệu demo.");
     return;
 }
 app.UseMiddleware<ApiExceptionMiddleware>();
