@@ -1,6 +1,6 @@
 # Hệ thống đặt lịch khám bệnh online (Backend)
 
-Web API cho phòng khám: bệnh nhân tự đặt lịch khám theo khung giờ của bác sĩ; lễ tân, bác sĩ và admin quản lý lịch hẹn; có trợ lý AI hỗ trợ đặt, đổi, huỷ lịch qua chat.
+Web API cho phòng khám: bệnh nhân tự đặt lịch khám theo khung giờ của bác sĩ; lễ tân, bác sĩ và admin quản lý lịch hẹn; bệnh nhân có thêm trợ lý AI hỗ trợ đặt, đổi, huỷ lịch qua chat.
 
 - **Frontend:** [QuanLyDatLichKhamBenhOnline_Front](https://github.com/dung4822/QuanLyDatLichKhamBenhOnline_Front) (React + Vite)
 - **Tech:** ASP.NET Core 8 Web API · PostgreSQL · EF Core · FluentValidation · Cookie Authentication · DeepSeek API · Cloudinary
@@ -25,6 +25,7 @@ Có thể tự đăng ký tài khoản bệnh nhân mới ở trang Đăng ký.
 
 ### Gợi ý kịch bản test
 1. **Bệnh nhân:** xem lịch đã đặt → đặt lịch mới → đổi giờ → huỷ lịch → hỏi trợ lý AI ("đặt lịch khám da liễu ngày mai").
+   Trợ lý AI **chỉ có ở tài khoản Bệnh nhân**, các vai trò khác không thấy mục chat.
 2. **Lễ tân:** xem toàn bộ lịch hẹn → đặt lịch hộ bệnh nhân → đánh dấu đã khám / không đến.
 3. **Bác sĩ:** xem lịch khám của riêng mình.
 
@@ -38,7 +39,7 @@ Có thể tự đăng ký tài khoản bệnh nhân mới ở trang Đăng ký.
 - Đặt, đổi, huỷ lịch hẹn; ghi lịch sử thao tác cho từng lịch
 - Phân quyền 4 vai trò: Admin, Lễ tân, Bác sĩ, Bệnh nhân
 - Đăng nhập bằng cookie HttpOnly, chống CSRF, giới hạn số request (rate limit)
-- Trợ lý AI: chỉ **đề xuất** thao tác, người dùng bấm xác nhận thì backend mới thực hiện
+- Trợ lý AI (chỉ dành cho Bệnh nhân): chỉ **đề xuất** thao tác, bệnh nhân bấm xác nhận thì backend mới thực hiện
 
 ## Kiến trúc
 
