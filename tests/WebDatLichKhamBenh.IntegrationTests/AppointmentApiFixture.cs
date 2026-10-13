@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Npgsql;
 using System.Net.Http.Json;
 using WebDatLichKhamBenh.Application.DTOs.Accounts;
+using WebDatLichKhamBenh.Application.DTOs.Chats;
 using WebDatLichKhamBenh.Api.Services;
 using WebDatLichKhamBenh.Application.Interfaces.Services;
 using WebDatLichKhamBenh.Application.Time;
@@ -28,6 +29,7 @@ public sealed class AppointmentApiFixture : IAsyncLifetime
     public string ConnectionString { get; private set; } = string.Empty;
     public IServiceProvider Services => _factory.Services;
     public SaveFailureInterceptor Failures { get; } = new();
+    public QueuedLlm Llm { get; } = new();
 
     public async Task InitializeAsync()
     {
@@ -56,6 +58,9 @@ public sealed class AppointmentApiFixture : IAsyncLifetime
                 var worker = services.Single(x => x.ServiceType == typeof(IHostedService) &&
                     x.ImplementationType == typeof(AppointmentSlotReconciliationService));
                 services.Remove(worker);
+                // Không gọi DeepSeek thật trong test; test chat tự xếp câu trả lời của AI vào hàng đợi.
+                services.RemoveAll<ILlmClient>();
+                services.AddSingleton<ILlmClient>(Llm);
             });
         });
         Client = await CreateClientWithCsrfAsync();
@@ -138,6 +143,24 @@ public sealed class AppointmentApiFixture : IAsyncLifetime
 
 public record Scenario(int PatientId, int OtherPatientId, int DoctorId, int OtherDoctorId,
     int SpecialtyId, int ShiftId, int AssignmentId, List<int> Slots, int OtherSlot, DateOnly Date);
+
+public sealed class QueuedLlm : ILlmClient
+{
+    private readonly Queue<LlmReply> _replies = new();
+    public int CallCount { get; private set; }
+
+    public void Enqueue(params LlmReply[] replies)
+    {
+        foreach (var reply in replies) _replies.Enqueue(reply);
+    }
+
+    public Task<LlmReply> CompleteAsync(IReadOnlyList<LlmMessage> messages,
+        IReadOnlyList<LlmToolDefinition> tools, CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        return Task.FromResult(_replies.Count > 0 ? _replies.Dequeue() : new LlmReply("Xin chào", []));
+    }
+}
 
 public sealed class SaveFailureInterceptor : SaveChangesInterceptor
 {

@@ -50,7 +50,7 @@ public class ApiExceptionMiddleware
         AuthenticationRequiredException => StatusCodes.Status401Unauthorized,
         AccessDeniedException => StatusCodes.Status403Forbidden,
         ResourceNotFoundException => StatusCodes.Status404NotFound,
-        AppointmentConflictException or AccountConflictException => StatusCodes.Status409Conflict,
+        AppointmentConflictException or AccountConflictException or ChatActionConflictException => StatusCodes.Status409Conflict,
         LlmUnavailableException => StatusCodes.Status502BadGateway,
         ImageStorageException => StatusCodes.Status503ServiceUnavailable,
         // Lỗi đọc request do Kestrel ném ra (body quá lớn, request hỏng...) đã mang sẵn status đúng.

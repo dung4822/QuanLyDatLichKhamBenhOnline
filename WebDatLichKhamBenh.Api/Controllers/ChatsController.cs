@@ -9,33 +9,51 @@ namespace WebDatLichKhamBenh.Api.Controllers;
 [ApiController]
 [Route("api/chats")]
 [Authorize(Roles = "Patient")]
-[EnableRateLimiting("chat")]
-[RequestSizeLimit(65536)]
 public class ChatsController : ControllerBase
 {
     private readonly IChatService _chatService;
-    private readonly IWebHostEnvironment _environment;
+    private readonly IChatActionService _actionService;
 
     public ChatsController(
         IChatService chatService,
-        IWebHostEnvironment environment)
+        IChatActionService actionService)
     {
         _chatService = chatService;
-        _environment = environment;
+        _actionService = actionService;
     }
 
-    [HttpPost]
-    [ProducesResponseType(typeof(ChatResponse), StatusCodes.Status200OK)]
-    public async Task<IActionResult> SendAsync(ChatRequest request, CancellationToken cancellationToken)
-        => Ok(await _chatService.SendAsync(request, cancellationToken));
-
-    [HttpPost("test")]
-    [AllowAnonymous]
-    [ProducesResponseType(typeof(ChatResponse), StatusCodes.Status200OK)]
-    public async Task<IActionResult> TestAsync(ChatRequest request, CancellationToken cancellationToken)
+    [HttpPost("sessions")]
+    [ProducesResponseType(typeof(ChatSessionDto), StatusCodes.Status201Created)]
+    public async Task<IActionResult> CreateSession()
     {
-        // Endpoint học thử: không mở gọi LLM miễn đăng nhập trong môi trường triển khai.
-        if (!_environment.IsDevelopment()) return NotFound();
-        return Ok(await _chatService.SendAsync(request, cancellationToken));
+        var session = await _chatService.CreateSessionAsync();
+        return CreatedAtAction(nameof(GetSession), new { sessionId = session.ChatSessionId }, session);
     }
+
+    [HttpGet("sessions")]
+    [ProducesResponseType(typeof(List<ChatSessionDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSessions() => Ok(await _chatService.GetSessionsAsync());
+
+    // Dùng khi reload trang: lấy lại các lượt chat và trạng thái thẻ xác nhận.
+    [HttpGet("sessions/{sessionId:guid}")]
+    [ProducesResponseType(typeof(ChatSessionDetailDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSession(Guid sessionId) => Ok(await _chatService.GetSessionAsync(sessionId));
+
+    // Chỉ endpoint này gọi AI, nên chỉ endpoint này bị giới hạn 10 request/phút.
+    [HttpPost("sessions/{sessionId:guid}/messages")]
+    [EnableRateLimiting("chat")]
+    [RequestSizeLimit(65536)]
+    [ProducesResponseType(typeof(ChatResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SendMessage(Guid sessionId, SendChatMessageRequest request,
+        CancellationToken cancellationToken)
+        => Ok(await _chatService.SendAsync(sessionId, request, cancellationToken));
+
+    [HttpPost("actions/{actionId:guid}/confirm")]
+    [ProducesResponseType(typeof(ChatActionDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ConfirmAction(Guid actionId, CancellationToken cancellationToken)
+        => Ok(await _actionService.ConfirmAsync(actionId, cancellationToken));
+
+    [HttpPost("actions/{actionId:guid}/reject")]
+    [ProducesResponseType(typeof(ChatActionDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RejectAction(Guid actionId) => Ok(await _actionService.RejectAsync(actionId));
 }

@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<IAppointmentSlotRepository, AppointmentSlotRepository>();
         services.AddScoped<IAppointmentRepository, AppointmentRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
+        services.AddScoped<IChatRepository, ChatRepository>();
         services.AddSingleton<IPasswordService, WebDatLichKhamBenh.Infrastructure.Security.PasswordService>();
         services.AddScoped<IClinicScheduleTransaction, ClinicScheduleTransaction>();
         services.AddSingleton(new CloudinarySettings

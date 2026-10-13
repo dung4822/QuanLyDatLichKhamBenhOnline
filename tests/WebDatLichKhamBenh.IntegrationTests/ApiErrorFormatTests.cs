@@ -50,7 +50,7 @@ public class ApiErrorFormatTests : IClassFixture<AppointmentApiFixture>
 
     [Fact]
     public async Task Forbidden_request_is_problem_details()
-        => await AssertProblemAsync(await Client.PostAsJsonAsync("/api/chats", new { message = "Xin chào" }), 403, "Không có quyền truy cập.");
+        => await AssertProblemAsync(await Client.PostAsync("/api/chats/sessions", null), 403, "Không có quyền truy cập.");
 
     [Fact]
     public async Task Business_conflict_is_problem_details()

@@ -209,6 +209,120 @@ namespace WebDatLichKhamBenh.Infrastructure.Persistence.Migrations
                     b.ToTable("AppointmentSlots", (string)null);
                 });
 
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.ChatAction", b =>
+                {
+                    b.Property<Guid>("ChatActionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("ChatTurnId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("PreviewJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.HasKey("ChatActionId");
+
+                    b.HasIndex("ChatTurnId")
+                        .IsUnique();
+
+                    b.ToTable("ChatActions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ChatActions_Status", "\"Status\" IN (0, 1, 2, 3, 4, 5)");
+
+                            t.HasCheckConstraint("CK_ChatActions_Type", "\"Type\" IN (0, 1, 2, 3)");
+                        });
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.ChatSession", b =>
+                {
+                    b.Property<Guid>("ChatSessionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("PatientId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("ChatSessionId");
+
+                    b.HasIndex("PatientId", "UpdatedAt");
+
+                    b.ToTable("ChatSessions");
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.ChatTurn", b =>
+                {
+                    b.Property<long>("ChatTurnId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("ChatTurnId"));
+
+                    b.Property<string>("AssistantReply")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<Guid>("ChatSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClientMessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserMessage")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.HasKey("ChatTurnId");
+
+                    b.HasIndex("ChatSessionId", "ClientMessageId")
+                        .IsUnique();
+
+                    b.ToTable("ChatTurns");
+                });
+
             modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.Doctor", b =>
                 {
                     b.Property<int>("DoctorId")
@@ -645,6 +759,39 @@ namespace WebDatLichKhamBenh.Infrastructure.Persistence.Migrations
                     b.Navigation("DoctorShift");
                 });
 
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.ChatAction", b =>
+                {
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.ChatTurn", "ChatTurn")
+                        .WithOne("Action")
+                        .HasForeignKey("WebDatLichKhamBenh.Domain.Entities.ChatAction", "ChatTurnId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ChatTurn");
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.ChatSession", b =>
+                {
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.ChatTurn", b =>
+                {
+                    b.HasOne("WebDatLichKhamBenh.Domain.Entities.ChatSession", "ChatSession")
+                        .WithMany("Turns")
+                        .HasForeignKey("ChatSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ChatSession");
+                });
+
             modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.Doctor", b =>
                 {
                     b.HasOne("WebDatLichKhamBenh.Domain.Entities.Specialty", "Specialty")
@@ -711,6 +858,16 @@ namespace WebDatLichKhamBenh.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.ChatSession", b =>
+                {
+                    b.Navigation("Turns");
+                });
+
+            modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.ChatTurn", b =>
+                {
+                    b.Navigation("Action");
                 });
 
             modelBuilder.Entity("WebDatLichKhamBenh.Domain.Entities.Doctor", b =>

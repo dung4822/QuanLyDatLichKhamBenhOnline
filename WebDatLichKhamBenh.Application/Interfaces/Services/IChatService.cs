@@ -4,5 +4,8 @@ namespace WebDatLichKhamBenh.Application.Interfaces.Services;
 
 public interface IChatService
 {
-    Task<ChatResponse> SendAsync(ChatRequest request, CancellationToken cancellationToken = default);
+    Task<ChatSessionDto> CreateSessionAsync();
+    Task<List<ChatSessionDto>> GetSessionsAsync();
+    Task<ChatSessionDetailDto> GetSessionAsync(Guid sessionId);
+    Task<ChatResponse> SendAsync(Guid sessionId, SendChatMessageRequest request, CancellationToken cancellationToken = default);
 }

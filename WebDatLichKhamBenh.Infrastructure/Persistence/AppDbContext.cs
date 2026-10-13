@@ -20,6 +20,9 @@ public class AppDbContext : DbContext
     public DbSet<UserAccount> UserAccounts { get; set; }
     public DbSet<UserSession> UserSessions { get; set; }
     public DbSet<AppointmentHistory> AppointmentHistories { get; set; }
+    public DbSet<ChatSession> ChatSessions { get; set; }
+    public DbSet<ChatTurn> ChatTurns { get; set; }
+    public DbSet<ChatAction> ChatActions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
